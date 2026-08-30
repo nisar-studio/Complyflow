@@ -1672,6 +1672,142 @@ async def delete_upload(project_id: str, upload_id: str, ctx: Dict[str, Any] = D
 
 
 # ──────────────────────────────────────────────────────────────────
+# Agent Events API (Polling + SSE Streaming)
+# ──────────────────────────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/events")
+async def list_agent_events(project_id: str, ctx: Dict[str, Any] = Depends(get_project_member_context)):
+    """List all agent execution events for a project (polling fallback for SSE)."""
+    storage = _get_storage()
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    events = await storage.get_events(project_id)
+    return {"events": events}
+
+
+@router.get("/projects/{project_id}/events/stream")
+async def stream_agent_events(project_id: str, ctx: Dict[str, Any] = Depends(get_project_member_context)):
+    """
+    Server-Sent Events (SSE) stream for real-time agent execution monitoring.
+    Subscribes to the EventBroadcaster and streams events as they arrive.
+    Cleans up the subscription when the client disconnects.
+    """
+    storage = _get_storage()
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    from app.services.event_broadcaster import get_broadcaster
+    broadcaster = get_broadcaster()
+
+    queue = await broadcaster.subscribe(project_id)
+
+    async def event_generator():
+        try:
+            # Send initial connection confirmation
+            yield f"data: {json.dumps({'type': 'CONNECTED', 'project_id': project_id, 'summary': 'SSE stream connected'})}\n\n"
+
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send heartbeat to keep connection alive
+                    yield f"data: {json.dumps({'type': 'HEARTBEAT', 'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await broadcaster.unsubscribe(project_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ──────────────────────────────────────────────────────────────────
+# Remediation Task Status API
+# ──────────────────────────────────────────────────────────────────
+
+class TaskStatusPayload(BaseModel):
+    status: str
+
+
+VALID_TASK_STATUSES = {"OPEN", "RESOLVED"}
+
+
+@router.put("/projects/{project_id}/tasks/{task_id}/status")
+async def update_task_status(
+    project_id: str,
+    task_id: str,
+    payload: TaskStatusPayload,
+    ctx: Dict[str, Any] = Depends(require_permission("remediation:manage")),
+):
+    """
+    Update the status of a remediation task (OPEN ↔ RESOLVED).
+    Emits an immutable audit event for the transition.
+    """
+    storage = _get_storage()
+
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    status_upper = payload.status.strip().upper()
+    if status_upper not in VALID_TASK_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid task status '{payload.status}'. Must be one of: {', '.join(sorted(VALID_TASK_STATUSES))}"
+        )
+
+    # Verify the task belongs to this project
+    tasks = await storage.get_tasks(project_id)
+    target_task = next((t for t in tasks if t.get("task_id") == task_id), None)
+    if not target_task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found in this project")
+
+    old_status = target_task.get("status", "OPEN")
+    if old_status == status_upper:
+        return {"status": "unchanged", "task_id": task_id, "task_status": old_status}
+
+    await storage.update_task_status(project_id, task_id, status_upper)
+
+    actor = ctx.get("user", {})
+    actor_id = actor.get("user_id")
+
+    await record_audit_event(
+        storage=storage,
+        project_id=project_id,
+        event_type="TASK_STATUS_UPDATED",
+        actor_type="AUDITOR",
+        actor_id=actor_id,
+        task_id=task_id,
+        requirement_id=target_task.get("related_requirement_id"),
+        summary=f"Task '{task_id}' status changed from {old_status} to {status_upper}.",
+        metadata={
+            "task_id": task_id,
+            "old_status": old_status,
+            "new_status": status_upper,
+            "task_title": target_task.get("title"),
+        },
+    )
+
+    return {
+        "status": "updated",
+        "task_id": task_id,
+        "old_status": old_status,
+        "new_status": status_upper,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────
 # Audit Activity Timeline API
 # ──────────────────────────────────────────────────────────────────
 

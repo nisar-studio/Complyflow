@@ -337,6 +337,12 @@ export const api = {
     return res.data;
   },
 
+  // ── Remediation Task Status ────────────────────────────
+  updateTaskStatus: async (projectId, taskId, status) => {
+    const res = await client.put(`/projects/${projectId}/tasks/${taskId}/status`, { status });
+    return res.data;
+  },
+
   // ── Enterprise Compliance Analytics ─────────────────────
   getProjectAnalytics: async (projectId) => {
     const res = await client.get(`/projects/${projectId}/analytics`);

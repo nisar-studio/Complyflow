@@ -1,11 +1,33 @@
 import React, { useState, useMemo } from "react";
-import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle } from "lucide-react";
+import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2 } from "lucide-react";
 import TaskUploadPanel from "./TaskUploadPanel";
+import api from "../api/client";
 
 export default function RemediationList({ tasks = [], projectId, requirements = [] }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [taskError, setTaskError] = useState(null);
+  const [taskSuccess, setTaskSuccess] = useState(null);
+
+  const handleToggleTaskStatus = async (task, e) => {
+    e.stopPropagation();
+    const newStatus = task.status === "RESOLVED" ? "OPEN" : "RESOLVED";
+    setUpdatingTaskId(task.task_id);
+    setTaskError(null);
+    setTaskSuccess(null);
+    try {
+      await api.updateTaskStatus(projectId, task.task_id, newStatus);
+      task.status = newStatus;
+      setTaskSuccess(`Task ${task.task_id} ${newStatus === "RESOLVED" ? "resolved" : "reopened"} successfully.`);
+      setTimeout(() => setTaskSuccess(null), 3000);
+    } catch (err) {
+      setTaskError(err.response?.data?.detail || err.message || "Failed to update task status");
+    } finally {
+      setUpdatingTaskId(null);
+    }
+  };
 
   const getSeverityBadge = (severity) => {
     const s = (severity || "MEDIUM").toUpperCase();
@@ -53,6 +75,20 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
 
   return (
     <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 backdrop-blur-xl shadow-2xl space-y-6">
+      {/* TASK STATUS FEEDBACK */}
+      {taskSuccess && (
+        <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-800/60 flex items-center space-x-2 text-xs text-emerald-300">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{taskSuccess}</span>
+        </div>
+      )}
+      {taskError && (
+        <div className="p-3 rounded-xl bg-red-950/30 border border-red-800/60 flex items-center justify-between text-xs text-red-300">
+          <span>{taskError}</span>
+          <button onClick={() => setTaskError(null)} className="text-red-400 hover:text-red-200">✕</button>
+        </div>
+      )}
+
       {/* HEADER & COUNTS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
@@ -151,6 +187,33 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
                   <p className="text-xs text-slate-300">{task.description}</p>
                 </div>
               </div>
+
+              {/* RESOLVE / REOPEN BUTTON */}
+              {projectId && (
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
+                  <button
+                    onClick={(e) => handleToggleTaskStatus(task, e)}
+                    disabled={updatingTaskId === task.task_id}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-all disabled:opacity-50 ${
+                      task.status === "RESOLVED"
+                        ? "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                        : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20"
+                    }`}
+                  >
+                    {updatingTaskId === task.task_id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : task.status === "RESOLVED" ? (
+                      <Undo2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <CheckSquare className="w-3.5 h-3.5" />
+                    )}
+                    <span>{task.status === "RESOLVED" ? "Reopen" : "Mark Resolved"}</span>
+                  </button>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {task.status === "RESOLVED" ? "This task has been completed" : "Upload evidence and mark when done"}
+                  </span>
+                </div>
+              )}
 
               {projectId && (
                 <TaskUploadPanel
