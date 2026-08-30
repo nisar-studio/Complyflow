@@ -86,17 +86,30 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
 
+    _DEFAULT_SESSION_SECRETS = {
+        "complyflow-session-secret-key-32-bytes!",
+        "complyflow-dev-secret-key-32-bytes-long!",
+    }
+
     def validate_production_settings(self) -> List[str]:
         """
         Validate critical security parameters when running in production mode.
-        Returns a list of warning or error messages.
-        Raises ValueError if production requirements are critically violated.
+        Returns a list of non-critical warning messages.
+        Raises ValueError for critical violations (e.g. default session secret).
         """
         errors = []
         if self.is_production():
-            # Check default insecure secrets
-            if self.session_secret == "complyflow-session-secret-key-32-bytes!" or len(self.session_secret) < 32:
-                errors.append("Production requires a strong, unique SESSION_SECRET (minimum 32 characters).")
+            # Block known default session secrets — this is a hard failure
+            if self.session_secret in self._DEFAULT_SESSION_SECRETS:
+                raise ValueError(
+                    "CRITICAL: SESSION_SECRET is set to a known default value. "
+                    "Production MUST provide a unique, random SESSION_SECRET via environment variable. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+            if len(self.session_secret) < 32:
+                raise ValueError(
+                    "CRITICAL: SESSION_SECRET is too short. Production requires a minimum of 32 characters."
+                )
 
             # Check CORS wildcard
             if any(origin == "*" for origin in self.cors_origins):

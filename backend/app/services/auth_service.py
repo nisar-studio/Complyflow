@@ -183,9 +183,13 @@ def verify_password(password: str, stored_hash: str) -> bool:
 # ─────────────────────────────────────────────────────────────
 
 def _get_signing_secret() -> bytes:
+    """Return the session signing secret from centralized configuration.
+
+    In production, validate_production_settings() blocks known default values
+    before any request is served, so this will always return a strong secret.
+    """
     settings = get_settings()
-    secret = getattr(settings, "session_secret", None) or getattr(settings, "jwt_secret", None) or os.environ.get("SESSION_SECRET", "complyflow-dev-secret-key-32-bytes-long!")
-    return secret.encode("utf-8")
+    return settings.session_secret.encode("utf-8")
 
 
 def create_session_token(

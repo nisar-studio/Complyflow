@@ -1530,12 +1530,16 @@ async def upload_remediation_evidence(
     upload_id = str(_uuid.uuid4())
     safe_name = sanitize_filename(file.filename or "upload")
     ext = get_extension(safe_name)
-    stored_filename_rel = str(
+
+    # Physical storage path (constructed on demand for file I/O)
+    physical_path = (
         Path(settings.upload_dir) / project_id / task_id / f"{upload_id}{ext}"
     )
-    stored_path = Path(stored_filename_rel)
-    stored_path.parent.mkdir(parents=True, exist_ok=True)
-    stored_path.write_bytes(file_bytes)
+    physical_path.parent.mkdir(parents=True, exist_ok=True)
+    physical_path.write_bytes(file_bytes)
+
+    # Relative path only — never expose absolute server filesystem paths
+    relative_path = str(Path(project_id) / task_id / f"{upload_id}{ext}")
 
     upload_data = {
         "upload_id": upload_id,
@@ -1543,7 +1547,7 @@ async def upload_remediation_evidence(
         "task_id": task_id,
         "requirement_id": requirement_id,
         "filename": safe_name,
-        "stored_filename": str(stored_path.resolve()),
+        "stored_filename": relative_path,
         "file_type": ext.lstrip(".") or "bin",
         "file_size": len(file_bytes),
         "upload_status": "PENDING_VERIFICATION",

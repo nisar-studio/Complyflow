@@ -373,12 +373,15 @@ class TestRemediationUploadAPI:
         assert cr.status_code == 200, cr.text
         uid = cr.json()["upload"]["upload_id"]
         record = run(storage.get_remediation_upload(pid, uid))
-        path = record["stored_filename"]
-        assert os.path.isfile(path), f"Expected file at {path}"
-        assert Path(path).read_bytes() == content
+        # stored_filename is relative to upload_dir (no absolute server paths)
+        rel_path = record["stored_filename"]
+        assert not os.path.isabs(rel_path), f"stored_filename should be relative, got: {rel_path}"
+        physical_path = Path(upload_dir) / rel_path
+        assert physical_path.is_file(), f"Expected file at {physical_path}"
+        assert physical_path.read_bytes() == content
 
     def test_delete_removes_file_from_disk(self, api_ctx):
-        client, pid, storage, _ = api_ctx
+        client, pid, storage, upload_dir = api_ctx
         cr = self._upload_pdf(client, pid, filename="cleanup.txt",
                               content=b"cleanup", description="")
         # txt file needs correct content-type
@@ -390,7 +393,9 @@ class TestRemediationUploadAPI:
         assert cr.status_code == 200, cr.text
         uid = cr.json()["upload"]["upload_id"]
         record = run(storage.get_remediation_upload(pid, uid))
-        path = record["stored_filename"]
-        assert os.path.isfile(path)
+        # stored_filename is relative to upload_dir
+        rel_path = record["stored_filename"]
+        physical_path = Path(upload_dir) / rel_path
+        assert physical_path.is_file(), f"Expected file at {physical_path}"
         client.delete(f"/api/projects/{pid}/uploads/{uid}")
-        assert not os.path.isfile(path), "File must be gone after delete"
+        assert not physical_path.is_file(), "File must be gone after delete"

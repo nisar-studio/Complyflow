@@ -33,11 +33,15 @@ logger = logging.getLogger("complyflow.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle management."""
-    # 1. Validate production configuration
+    # 1. Validate production configuration (raises ValueError on critical failures)
     if settings.is_production():
-        validation_errors = settings.validate_production_settings()
-        for err in validation_errors:
-            logger.warning(f"Production Security Warning: {err}")
+        try:
+            warnings = settings.validate_production_settings()
+            for err in warnings:
+                logger.warning(f"Production Security Warning: {err}")
+        except ValueError as exc:
+            logger.error(f"Production configuration rejected: {exc}")
+            raise
 
     # 2. Verify local storage initialization
     try:
@@ -65,7 +69,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-Requested-With", "X-XSRF-TOKEN"],
 )
 
 

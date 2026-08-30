@@ -1496,11 +1496,16 @@ class SQLiteStorageService(StorageInterface):
         # Remove physical file if the record existed
         if deleted and record:
             stored = record.get("stored_filename", "")
-            if stored and os.path.isfile(stored):
-                try:
-                    os.remove(stored)
-                except OSError:
-                    pass  # Log but don't raise; DB row is already gone
+            if stored:
+                # stored_filename is relative to upload_dir — resolve to physical path
+                from app.core.config import get_settings
+                settings = get_settings()
+                physical_path = Path(settings.upload_dir) / stored
+                if physical_path.is_file():
+                    try:
+                        physical_path.unlink()
+                    except OSError:
+                        pass  # Log but don't raise; DB row is already gone
 
         return deleted
 

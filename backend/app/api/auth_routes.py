@@ -239,13 +239,17 @@ async def bootstrap_admin():
     """
     Development bootstrap: Creates the initial ADMIN account if no users exist.
 
-    Default admin credentials:
-      Email:    admin@complyflow.local
-      Password: Admin@ComplyFlow123!
-
-    This endpoint is only effective when the users table is empty.
-    On a populated database it returns the existing admin safely (no mutation).
+    BLOCKED in production — use environment variables to provision the first admin.
+    This endpoint is only effective when APP_ENV != production AND the users table is empty.
     """
+    from app.core.config import get_settings
+    settings = get_settings()
+    if settings.is_production():
+        raise HTTPException(
+            status_code=403,
+            detail="Bootstrap is disabled in production. Provision the first admin via environment variables.",
+        )
+
     storage = get_storage()
     count = await storage.count_users()
     if count > 0:
@@ -428,9 +432,17 @@ async def list_all_users(
 ):
     """
     List all registered users (safe — no password hashes).
-    Restricted to authenticated users only; ADMIN status not enforced globally
-    since projects are the RBAC boundary.
+    Requires ADMIN role — checked by global membership in any project.
     """
     storage = get_storage()
+    # Verify the requesting user has ADMIN role in at least one project
+    user_id = current_user["user_id"]
+    user_projects = await storage.list_user_projects(user_id)
+    is_admin = any(p.get("role") == Role.ADMIN.value for p in user_projects)
+    if not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: ADMIN role required.",
+        )
     users = await storage.list_users()
     return {"users": users, "count": len(users)}
