@@ -1,0 +1,52 @@
+COMPANY PROFILE
+NovaTech Solutions Ltd.
+
+IMPORTANT: This profile contains a typographical error in the company address
+that is intentionally inconsistent with other submitted documents.
+(This creates the CONFLICT required for the demo scenario.)
+
+---
+
+COMPANY OVERVIEW
+
+NovaTech Solutions Ltd. is an innovative technology services company founded in 2020.
+We specialize in cloud infrastructure, custom software development, and cybersecurity
+consulting for enterprise clients across North America and Europe.
+
+REGISTERED OFFICE ADDRESS: 42 Innovation Drive, Suite 400, Tech City, TC 10001
+
+NOTE: The address above contains a discrepancy — Suite 400 vs. Suite 800 as stated
+in the business registration certificate, tax certificate, and financial statements.
+This is the intentional address conflict for the compliance demo.
+
+FOUNDING YEAR: 2020
+EMPLOYEES: 42 full-time
+
+MISSION STATEMENT:
+To empower organizations with reliable, secure, and innovative technology solutions
+that drive business growth and operational excellence.
+
+CORE VALUES:
+- Innovation: We embrace new technologies and approaches
+- Integrity: We operate with transparency and honesty
+- Excellence: We deliver high-quality work, consistently
+- Partnership: We treat client success as our own success
+
+LEADERSHIP TEAM:
+- Alexandra Chen — Chief Executive Officer
+- Marcus Rivera — Chief Operating Officer
+- Dr. Priya Sharma — Chief Technology Officer
+- Robert Fitzgerald — Chief Financial Officer
+
+KEY CLIENTS (Reference available on request):
+- Meridian Financial Group — Cloud Infrastructure
+- Atlas Healthcare Networks — Security Consulting
+- Pinnacle Retail Corp — Custom Software Development
+- Vanguard Logistics — System Integration
+
+CONTACT:
+Website: www.novatech-solutions.example.com
+Email: info@novatech-solutions.example.com
+Phone: +1 (555) 100-2000
+
+This profile is current as of January 2025.

@@ -1,0 +1,130 @@
+NovaTech Solutions Ltd. — Vendor Certification Requirements
+
+PROGRAM: NovaTech Vendor Certification Program (NVCP)
+VERSION: 2025.1
+EFFECTIVE DATE: January 1, 2025
+
+All vendors seeking certification must satisfy ALL 12 requirements listed below.
+Incomplete submissions will not be processed.
+
+---
+
+SECTION 1: LEGAL AND REGISTRATION
+
+REQ-001: Business Registration Certificate
+Vendors must provide a valid, current business registration certificate issued by
+a recognized government authority. The certificate must confirm the vendor's legal
+name, registration number, and registered business address. The certificate must
+not be expired at the time of submission.
+Required evidence: Official business registration certificate (PDF)
+Priority: HIGH
+
+REQ-002: Tax Compliance Certificate
+Vendors must provide a tax compliance certificate issued by the relevant national
+tax authority confirming the vendor is compliant with all tax obligations.
+The certificate must be dated within the last 12 months.
+Required evidence: Tax compliance or good standing certificate from tax authority (PDF)
+Priority: HIGH
+
+REQ-003: Company Address Confirmation
+The vendor's registered company address as stated in ALL submitted documents must
+be consistent. Any discrepancy in the company address across different submitted
+documents constitutes a compliance conflict.
+Required evidence: Consistent address across all submitted documents
+Priority: MEDIUM
+
+---
+
+SECTION 2: FINANCIAL
+
+REQ-004: Financial Statement
+Vendors must provide audited or certified financial statements for the most recent
+fiscal year. Statements must be signed by a licensed auditor or accountant.
+Required evidence: Audited financial statement (PDF)
+Priority: HIGH
+
+REQ-005: Bank Reference Letter
+Vendors must provide a bank reference letter from their primary banking institution
+confirming the account is in good standing and the vendor maintains adequate
+financial resources.
+Required evidence: Bank reference letter on official bank letterhead (PDF)
+Priority: MEDIUM
+
+---
+
+SECTION 3: COMPLIANCE AND INSURANCE
+
+REQ-006: General Liability Insurance Certificate
+Vendors must carry and provide proof of general liability insurance with a minimum
+coverage of USD 2,000,000 per occurrence. The insurance certificate must name
+NovaTech Solutions Ltd. as an additional insured party and must not be expired.
+Required evidence: Current insurance certificate of liability (PDF)
+Priority: CRITICAL
+
+REQ-007: Data Processing Agreement
+Vendors who process, handle, or have access to NovaTech data must execute and
+return a signed Data Processing Agreement (DPA). The DPA must be signed by an
+authorized representative of the vendor.
+Required evidence: Signed Data Processing Agreement (PDF)
+Priority: CRITICAL
+
+---
+
+SECTION 4: QUALITY AND OPERATIONS
+
+REQ-008: Quality Management Manual or Policy
+Vendors must provide evidence of a documented quality management process, either
+a formal Quality Management Manual or a Quality Assurance Policy document.
+Required evidence: Quality manual or QA policy document (PDF)
+Priority: MEDIUM
+
+REQ-009: Organizational Chart
+Vendors must provide a current organizational chart showing the reporting structure,
+key management roles, and the designated contact person for NovaTech.
+Required evidence: Organizational chart (PDF or TXT)
+Priority: LOW
+
+REQ-010: Technical Specifications Document
+Vendors must provide a technical specifications document describing their primary
+product or service offering, technical capabilities, and delivery methodology.
+Required evidence: Technical specifications or capabilities document (PDF)
+Priority: MEDIUM
+
+---
+
+SECTION 5: REFERENCES AND HISTORY
+
+REQ-011: Client Reference List
+Vendors must provide a list of at least three (3) current or recent clients who
+can confirm the vendor's service delivery performance.
+Required evidence: Client reference list with contact details (PDF or TXT)
+Priority: LOW
+
+REQ-012: Company Profile
+Vendors must provide a company profile document summarizing the organization's
+history, mission, core services, and key personnel. The company address in the
+profile must match all other submitted documents.
+Required evidence: Company profile document (PDF)
+Priority: LOW
+
+---
+
+SUBMISSION CHECKLIST:
+
+[ ] REQ-001 Business Registration Certificate
+[ ] REQ-002 Tax Compliance Certificate
+[ ] REQ-003 Company Address (verified across all docs)
+[ ] REQ-004 Financial Statement
+[ ] REQ-005 Bank Reference Letter
+[ ] REQ-006 General Liability Insurance Certificate
+[ ] REQ-007 Data Processing Agreement
+[ ] REQ-008 Quality Management Manual
+[ ] REQ-009 Organizational Chart
+[ ] REQ-010 Technical Specifications
+[ ] REQ-011 Client Reference List
+[ ] REQ-012 Company Profile
+
+All 12 requirements must be satisfied before certification can be issued.
+Submissions missing any requirement will be returned as INCOMPLETE.
+
+For questions: vendor-certification@novatech.example.com

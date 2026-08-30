@@ -1,0 +1,38 @@
+ORGANIZATIONAL CHART
+NovaTech Solutions Ltd.
+As of January 2025
+
+CHIEF EXECUTIVE OFFICER
+  Alexandra Chen
+
+  ├── CHIEF OPERATING OFFICER
+  │     Marcus Rivera
+  │
+  ├── CHIEF TECHNOLOGY OFFICER
+  │     Dr. Priya Sharma
+  │     │
+  │     ├── Engineering Manager — Platform
+  │     │     Thomas Kraus
+  │     │     (Team of 8 engineers)
+  │     │
+  │     ├── Engineering Manager — Security
+  │     │     Aisha Mensah
+  │     │     (Team of 4 engineers)
+  │     │
+  │     └── QA Lead
+  │           James Park
+  │           (Team of 3 QA engineers)
+  │
+  ├── CHIEF FINANCIAL OFFICER
+  │     Robert Fitzgerald
+  │
+  ├── DIRECTOR OF SALES
+  │     Sofia Morales
+  │
+  └── VENDOR RELATIONS MANAGER (NovaTech Contact)
+        David Okafor
+        Email: d.okafor@novatech.example.com
+        Phone: +1 (555) 100-2200
+
+Total Headcount: 42 employees (full-time)
+Last Updated: January 15, 2025

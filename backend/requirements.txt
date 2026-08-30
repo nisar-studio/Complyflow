@@ -1,0 +1,13 @@
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+python-multipart==0.0.20
+google-adk==2.8.0
+google-genai==2.20.0
+google-cloud-firestore==2.29.0
+pypdf==6.16.2
+python-docx==1.2.0
+aiosqlite==0.22.1
+pydantic==2.11.7
+pydantic-settings==2.10.1
+httpx==0.28.1
+reportlab>=5.0.0

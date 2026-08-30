@@ -1,0 +1,60 @@
+QUALITY MANAGEMENT MANUAL
+NovaTech Solutions Ltd.
+
+Document Number: QM-2025-001
+Version: 3.2
+Effective Date: January 1, 2025
+Approved by: Chief Operating Officer
+
+---
+
+1. PURPOSE AND SCOPE
+
+This Quality Management Manual describes the quality management system (QMS)
+of NovaTech Solutions Ltd. It applies to all operations, products, and services
+delivered by the organization.
+
+2. QUALITY POLICY
+
+NovaTech Solutions Ltd. is committed to delivering technology services that
+consistently meet or exceed customer requirements. We continuously improve our
+processes to maintain the highest standards of quality, reliability, and security.
+
+3. ORGANIZATIONAL RESPONSIBILITIES
+
+- CEO: Accountable for overall quality strategy and resource allocation
+- COO: Responsible for QMS implementation and monitoring
+- Quality Manager: Manages day-to-day QMS operations and audits
+- Team Leads: Responsible for process compliance within their teams
+
+4. QUALITY PROCESSES
+
+4.1 Service Design and Development
+All new services undergo design review, prototype testing, and user acceptance
+testing before release. Non-conformities are tracked and resolved within 5 days.
+
+4.2 Supplier and Vendor Management
+Third-party suppliers are evaluated annually against quality criteria including
+on-time delivery, defect rates, and compliance with contractual requirements.
+
+4.3 Internal Audits
+Internal quality audits are conducted quarterly. Results are reviewed by senior
+management and corrective actions are tracked to closure.
+
+4.4 Customer Satisfaction
+Customer satisfaction surveys are conducted after each project delivery. Results
+are analyzed and used to drive continuous improvement initiatives.
+
+5. DOCUMENT CONTROL
+
+All quality documents are version-controlled and stored in the company's document
+management system. Obsolete documents are removed from circulation within 24 hours.
+
+6. CONTINUOUS IMPROVEMENT
+
+NovaTech follows the Plan-Do-Check-Act (PDCA) cycle for continuous improvement
+of all key business processes.
+
+Certified by: ISO 9001:2015 Internal Audit Team
+Last Review Date: December 15, 2024
+Next Review Due: December 15, 2025
