@@ -7,7 +7,7 @@ google-cloud-firestore==2.29.0
 pypdf==6.16.2
 python-docx==1.2.0
 aiosqlite==0.22.1
-pydantic==2.11.7
+pydantic==2.12.5
 pydantic-settings==2.10.1
 httpx==0.28.1
 reportlab>=5.0.0
