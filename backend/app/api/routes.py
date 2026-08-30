@@ -637,6 +637,7 @@ async def _run_verification_task(
         all_gaps = await storage.get_issues(project_id)
         open_gaps = [g for g in all_gaps if g.get("gap_id") in remaining_gap_ids]
         tasks = await storage.get_tasks(project_id)
+        doc_names = [d.get("name", "unknown") for d in all_documents]
         # Extract framework metadata from project
         proj_obj = await storage.get_project(project_id)
         proj_meta = {}
@@ -1745,6 +1746,46 @@ async def get_single_audit_event(project_id: str, event_id: str, ctx: Dict[str, 
         raise HTTPException(status_code=404, detail=f"Audit event '{event_id}' does not belong to this project")
 
     return {"event": event}
+
+
+# ──────────────────────────────────────────────────────────────────
+# Enterprise Compliance Analytics
+# ──────────────────────────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/analytics")
+async def get_project_analytics(
+    project_id: str,
+    ctx: Dict[str, Any] = Depends(get_project_member_context),
+):
+    """
+    Read-only enterprise compliance analytics for a single project.
+    Aggregates score trends, requirement status, issues, tasks, audit activity,
+    framework coverage, remediation effectiveness, documents, and override impact.
+    """
+    storage = _get_storage()
+    from app.services.analytics_service import AnalyticsService
+    analytics = AnalyticsService(storage=storage)
+
+    data = await analytics.get_project_analytics(project_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return data
+
+
+@router.get("/analytics/portfolio")
+async def get_portfolio_analytics(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Read-only cross-project portfolio analytics for the authenticated user.
+    Returns aggregate metrics across all projects the user is a member of.
+    """
+    storage = _get_storage()
+    from app.services.analytics_service import AnalyticsService
+    analytics = AnalyticsService(storage=storage)
+
+    data = await analytics.get_portfolio_analytics(current_user["user_id"])
+    return data
 
 
 # ──────────────────────────────────────────────────────────────────

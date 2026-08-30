@@ -336,6 +336,17 @@ export const api = {
     const res = await client.delete(`/projects/${projectId}/frameworks/${encodeURIComponent(frameworkId)}`);
     return res.data;
   },
+
+  // ── Enterprise Compliance Analytics ─────────────────────
+  getProjectAnalytics: async (projectId) => {
+    const res = await client.get(`/projects/${projectId}/analytics`);
+    return res.data;
+  },
+
+  getPortfolioAnalytics: async () => {
+    const res = await client.get('/analytics/portfolio');
+    return res.data;
+  },
 };
 
 

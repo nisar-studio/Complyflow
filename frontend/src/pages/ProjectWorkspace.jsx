@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ShieldCheck, RefreshCw, Upload, CheckCircle2, AlertTriangle, 
-  ArrowLeft, FileText, Sparkles, Loader2, Award, History, BookOpen, Clock, Layers
+  ArrowLeft, FileText, Sparkles, Loader2, Award, History, BookOpen, Clock, Layers, BarChart3
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import AgentActivity from '../components/AgentActivity';
@@ -12,6 +12,7 @@ import RemediationList from '../components/RemediationList';
 import VerificationHistory from '../components/VerificationHistory';
 import DocumentViewer from '../components/DocumentViewer';
 import AuditTimeline from '../components/AuditTimeline';
+import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import ProjectMembersModal from '../components/ProjectMembersModal';
 import FrameworkModal from '../components/FrameworkModal';
 import { useAgentEvents } from '../hooks/useAgentEvents';
@@ -351,6 +352,18 @@ export default function ProjectWorkspace() {
             <Clock className="w-3.5 h-3.5" />
             <span>Audit Activity Log</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1.5 ${
+              activeTab === 'analytics'
+                ? 'bg-brand-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Analytics</span>
+          </button>
         </div>
 
         {/* TAB 1: AGENT ACTIVITY WORKSPACE */}
@@ -442,6 +455,13 @@ export default function ProjectWorkspace() {
               projectId={projectId}
               onNavigateTab={setActiveTab}
             />
+          </div>
+        )}
+
+        {/* TAB 7: ENTERPRISE COMPLIANCE ANALYTICS */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            <AnalyticsDashboard projectId={projectId} />
           </div>
         )}
 
