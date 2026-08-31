@@ -3,7 +3,7 @@
 > Autonomous AI Compliance Agent
 > *"From requirements to ready-to-submit. Autonomously."*
 
-Built for the **All Things Agentic Hackathon**.
+
 
 ---
 
