@@ -52,6 +52,8 @@ python -m app verify-config
 
 This will confirm your secrets are strong enough and your config is valid.
 
+> **Security note:** Running `docker compose config` will render resolved secret values in plaintext. Do not share the output or commit it to version control. Always pipe it through a redaction tool or discard the output after use.
+
 ---
 
 ## 2. First Admin Provisioning
