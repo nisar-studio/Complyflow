@@ -12,4 +12,16 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.js'],
+    css: false,
+    moduleNameMapper: {
+      '^lucide-react$': '<rootDir>/src/test/__mocks__/lucide-react.jsx',
+    },
+    coverage: {
+      provider: 'v8',
+    },
+  },
 })
