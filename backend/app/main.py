@@ -43,7 +43,20 @@ async def lifespan(app: FastAPI):
             logger.error(f"Production configuration rejected: {exc}")
             raise
 
-    # 2. Verify local storage initialization
+    # 2. Run pending database migrations
+    try:
+        from app.services.migration_service import run_pending_migrations
+        applied = await run_pending_migrations(settings.database_path)
+        if applied:
+            logger.info(f"Applied {len(applied)} database migration(s): {', '.join(applied)}")
+        else:
+            logger.info("Database migrations up to date.")
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        # Don't fail startup on migration errors — let storage init handle schema
+        pass
+
+    # 3. Verify local storage initialization
     try:
         storage = get_storage()
         await storage.list_projects()
@@ -58,7 +71,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ComplyFlow API",
     description="Autonomous AI Compliance Agent — powered by Google ADK + Gemini (Local-First)",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 

@@ -3,12 +3,17 @@ ComplyFlow — Command-Line Interface
 
 Provides administrative utilities for production deployments:
   - create-admin: provision the initial ADMIN user in production
+  - add-member: add a user to a project with a role
   - verify-config: validate production configuration
+  - migrate: run pending database migrations
+  - migrate-status: show migration status
 
 Usage:
   python -m app create-admin
   python -m app create-admin --email admin@example.com --name "Admin User"
   python -m app verify-config
+  python -m app migrate
+  python -m app migrate-status
 """
 from __future__ import annotations
 
@@ -193,6 +198,72 @@ def _verify_config(args):
     print(f"   Gemini key:      {'[SET]' if settings.gemini_api_key else '[NOT SET]'}")
 
 
+def _migrate(args):
+    """Run pending database migrations."""
+    _setup_env()
+    from app.core.config import get_settings
+    from app.services.migration_service import run_pending_migrations
+
+    settings = get_settings()
+    db_path = settings.database_path
+
+    print(f"Database: {db_path}")
+    print("Running pending migrations...")
+    print("")
+
+    async def _run():
+        applied = await run_pending_migrations(db_path)
+        return applied
+
+    applied = asyncio.run(_run())
+
+    if applied:
+        print(f"Applied {len(applied)} migration(s):")
+        for mid in applied:
+            print(f"   ✓ {mid}")
+    else:
+        print("No pending migrations. Database is up to date.")
+
+    print("")
+    print("Migration complete.")
+
+
+def _migrate_status(args):
+    """Show migration status."""
+    _setup_env()
+    from app.core.config import get_settings
+    from app.services.migration_service import get_migration_status
+
+    settings = get_settings()
+    db_path = settings.database_path
+
+    print(f"Database: {db_path}")
+    print("")
+
+    async def _status():
+        return await get_migration_status(db_path)
+
+    status = asyncio.run(_status())
+
+    print(f"Total migrations:  {status['total']}")
+    print(f"Applied:           {status['applied_count']}")
+    print(f"Pending:           {status['pending_count']}")
+    print("")
+
+    if status["applied"]:
+        print("Applied migrations:")
+        for m in status["applied"]:
+            print(f"   ✓ {m['id']} — {m['name']} (applied: {m['applied_at'][:19]})")
+        print("")
+
+    if status["pending"]:
+        print("Pending migrations:")
+        for m in status["pending"]:
+            print(f"   ○ {m['id']} — {m['name']}")
+        print("")
+    else:
+        print("All migrations applied. Database is up to date.")
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -218,6 +289,14 @@ def main():
     # verify-config
     verify_parser = subparsers.add_parser("verify-config", help="Validate production configuration")
     verify_parser.set_defaults(func=_verify_config)
+
+    # migrate
+    migrate_parser = subparsers.add_parser("migrate", help="Run pending database migrations")
+    migrate_parser.set_defaults(func=_migrate)
+
+    # migrate-status
+    status_parser = subparsers.add_parser("migrate-status", help="Show migration status")
+    status_parser.set_defaults(func=_migrate_status)
 
     args = parser.parse_args()
 
