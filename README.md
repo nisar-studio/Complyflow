@@ -174,8 +174,3 @@ gcloud run deploy complyflow-api \
 
 ---
 
-## 11. Hackathon & Attribution
-
-Built for the **All Things Agentic Hackathon**.
-Uses official Google technologies: Gemini, Google ADK, Google Cloud Firestore, and Cloud Run.
-*(Note: Independent hackathon submission; not an official Google product).*
