@@ -1,0 +1,62 @@
+# ============================================================
+# ComplyFlow — Docker Compose (Production)
+#
+# Usage:
+#   1. Copy .env.example to .env and configure secrets
+#   2. Run: docker compose up -d
+#   3. Create admin: docker compose exec backend python -m app create-admin
+#
+# ============================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: complyflow-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - APP_ENV=production
+      - SESSION_SECRET=${SESSION_SECRET}
+      - CSRF_SECRET=${CSRF_SECRET}
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
+      - DATABASE_PATH=/app/data/complyflow.db
+      - UPLOAD_DIR=/app/uploads
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - complyflow-data:/app/data
+      - complyflow-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # Optional: Serve the frontend build with nginx
+  # Uncomment and configure if you want a self-contained deployment
+  #
+  # frontend:
+  #   image: nginx:alpine
+  #   container_name: complyflow-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./frontend/dist:/usr/share/nginx/html:ro
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./certs:/etc/nginx/certs:ro
+  #   depends_on:
+  #     - backend
+
+volumes:
+  complyflow-data:
+    driver: local
+  complyflow-uploads:
+    driver: local

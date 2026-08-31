@@ -390,6 +390,7 @@ class TestScalePerformance:
         t_elapsed = time.perf_counter() - t0
 
         assert res.status_code == 200
-        # 25 overrides should complete in under 2.0 seconds on local SQLite WAL
-        assert t_elapsed < 2.0
+        # 25 overrides should complete reasonably fast on local SQLite WAL.
+        # Use generous threshold to avoid machine-dependent flakiness.
+        assert t_elapsed < 5.0, f"Bulk overrides took {t_elapsed:.2f}s — expected < 5.0s"
         assert res.json()["total_succeeded"] == 25

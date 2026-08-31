@@ -30,7 +30,6 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 
 # Copy application source code
 COPY --chown=appuser:appgroup app /app/app
-COPY --chown=appuser:appgroup run.py /app/run.py
 
 # Create directory for SQLite DB and file uploads with proper ownership
 RUN mkdir -p /app/data /app/uploads && chown -R appuser:appgroup /app/data /app/uploads
@@ -52,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 # Start production server
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--no-access-log"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-access-log"]

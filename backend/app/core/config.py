@@ -91,6 +91,11 @@ class Settings(BaseSettings):
         "complyflow-dev-secret-key-32-bytes-long!",
     }
 
+    _DEFAULT_CSRF_SECRETS = {
+        "complyflow-csrf-secret-key-32-bytes!",
+        "complyflow-dev-csrf-secret-key-32-bytes-long!",
+    }
+
     def validate_production_settings(self) -> List[str]:
         """
         Validate critical security parameters when running in production mode.
@@ -109,6 +114,18 @@ class Settings(BaseSettings):
             if len(self.session_secret) < 32:
                 raise ValueError(
                     "CRITICAL: SESSION_SECRET is too short. Production requires a minimum of 32 characters."
+                )
+
+            # Block known default CSRF secrets — hard failure like session_secret
+            if self.csrf_secret in self._DEFAULT_CSRF_SECRETS:
+                raise ValueError(
+                    "CRITICAL: CSRF_SECRET is set to a known default value. "
+                    "Production MUST provide a unique, random CSRF_SECRET via environment variable. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+            if len(self.csrf_secret) < 32:
+                raise ValueError(
+                    "CRITICAL: CSRF_SECRET is too short. Production requires a minimum of 32 characters."
                 )
 
             # Check CORS wildcard
