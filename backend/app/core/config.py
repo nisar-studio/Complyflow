@@ -51,7 +51,7 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
         ],
-        description="Allowed CORS origins list (no wildcards allowed with credentials)",
+        description="Allowed CORS origins (JSON array in env vars)",
     )
 
     # ── Security, Sessions & Cookies ─────────────────────────
@@ -76,12 +76,7 @@ class Settings(BaseSettings):
     # ── Frontend Base URL ────────────────────────────────────
     vite_api_base_url: str = Field(default="http://localhost:8000", description="Frontend API Base URL")
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: Any) -> List[str]:
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+
 
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"

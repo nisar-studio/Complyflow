@@ -25,7 +25,7 @@ Edit `.env` and set the following **required** production values:
 | `SESSION_SECRET` | **Yes** | Cryptographic secret for session signing (min 32 chars) |
 | `CSRF_SECRET` | **Yes** | Cryptographic secret for CSRF tokens (min 32 chars) |
 | `GEMINI_API_KEY` | **Yes** | Google Gemini API key for AI-powered analysis |
-| `CORS_ORIGINS` | **Yes** | Your frontend URL (e.g. `https://compliance.example.com`) |
+| `CORS_ORIGINS` | **Yes** | JSON array of frontend URLs (e.g. `["https://compliance.example.com"]`) |
 | `COOKIE_SECURE` | **Yes** | Set to `true` when behind HTTPS |
 | `DATABASE_PATH` | No | SQLite database path (default: `complyflow.db`) |
 | `UPLOAD_DIR` | No | File upload directory (default: `uploads`) |
@@ -115,7 +115,7 @@ docker run -d \
   -e CSRF_SECRET="your-unique-csrf-secret-here" \
   -e COOKIE_SECURE=true \
   -e GEMINI_API_KEY="your-gemini-api-key" \
-  -e CORS_ORIGINS="https://your-frontend-domain.com" \
+  -e CORS_ORIGINS='["https://your-frontend-domain.com"]' \
   complyflow-backend
 
 # Create the first admin
@@ -136,7 +136,7 @@ export SESSION_SECRET="your-unique-session-secret-here"
 export CSRF_SECRET="your-unique-csrf-secret-here"
 export COOKIE_SECURE=true
 export GEMINI_API_KEY="your-gemini-api-key"
-export CORS_ORIGINS="https://your-frontend-domain.com"
+export CORS_ORIGINS='["https://your-frontend-domain.com"]'
 export DATABASE_PATH=/opt/complyflow/data/complyflow.db
 export UPLOAD_DIR=/opt/complyflow/uploads
 

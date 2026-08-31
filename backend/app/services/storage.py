@@ -2469,7 +2469,7 @@ class FirestoreStorageService(StorageInterface):
 _storage_instance: Optional[StorageInterface] = None
 
 
-def get_storage(db_path: str = "complyflow.db") -> StorageInterface:
+def get_storage(db_path: str = None) -> StorageInterface:
     """
     Get the configured storage service.
     Defaults to SQLite for local development.
@@ -2478,6 +2478,16 @@ def get_storage(db_path: str = "complyflow.db") -> StorageInterface:
     global _storage_instance
     if _storage_instance is not None:
         return _storage_instance
+
+    # Use provided path, then env var, then settings, then default
+    if db_path is None:
+        db_path = os.environ.get("DATABASE_PATH")
+    if db_path is None:
+        try:
+            from app.core.config import get_settings
+            db_path = get_settings().database_path
+        except Exception:
+            db_path = "complyflow.db"
 
     use_firestore = os.environ.get("USE_FIRESTORE", "false").lower() == "true"
     gcp_project = os.environ.get("GOOGLE_CLOUD_PROJECT")

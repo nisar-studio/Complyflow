@@ -26,7 +26,7 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
       - DATABASE_PATH=/app/data/complyflow.db
       - UPLOAD_DIR=/app/uploads
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - complyflow-data:/app/data

@@ -25,8 +25,9 @@ WORKDIR /app
 RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
 
 # Copy installed wheels from builder stage
-COPY --from=builder /root/.local /home/appuser/.local
-ENV PATH=/home/appuser/.local/bin:$PATH
+# useradd -d /app sets home to /app, so Python finds packages in /app/.local
+COPY --from=builder /root/.local /app/.local
+ENV PATH=/app/.local/bin:$PATH
 
 # Copy application source code
 COPY --chown=appuser:appgroup app /app/app
