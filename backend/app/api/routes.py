@@ -694,6 +694,26 @@ async def _run_verification_task(
             emit_event=emit_event,
         )
 
+        # Generate notifications for all project members
+        members = await storage.list_project_members(project_id)
+        for member in members:
+            member_id = member.get("user_id")
+            if member_id:
+                await storage.save_notification(
+                    user_id=member_id,
+                    notification={
+                        "project_id": project_id,
+                        "type": "VERIFICATION_COMPLETED",
+                        "title": "Verification Completed",
+                        "message": f"Verification completed. Score: {score}%, Status: {status}.",
+                        "metadata": {
+                            "run_id": run_id,
+                            "compliance_score": score,
+                            "overall_status": status,
+                        },
+                    },
+                )
+
     except Exception as e:
         safe_msg = _sanitize_error(str(e))
         error_event = {
@@ -1895,6 +1915,23 @@ async def assign_task(
         },
     )
 
+    # Generate in-app notification for the assignee
+    if payload.assigned_to != actor_id:  # don't notify self
+        await storage.save_notification(
+            user_id=payload.assigned_to,
+            notification={
+                "project_id": project_id,
+                "type": "TASK_ASSIGNED",
+                "title": "Task Assigned",
+                "message": f"Task '{target_task.get("title", task_id)}' has been assigned to you.",
+                "metadata": {
+                    "task_id": task_id,
+                    "assigned_by": actor_id,
+                    "due_date": payload.due_date,
+                },
+            },
+        )
+
     return {
         "status": "assigned",
         "task_id": task_id,
@@ -2195,6 +2232,81 @@ async def bulk_assign_tasks(
         "total_requested": len(unique_ids),
         "total_assigned": assigned_count,
     }
+
+
+# ──────────────────────────────────────────────────────────────────
+# In-App Notifications (User-Scoped)
+# ──────────────────────────────────────────────────────────────────
+
+@router.get("/notifications")
+async def list_notifications(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    project_id: Optional[str] = Query(None, description="Filter by project"),
+    unread_only: bool = Query(False, description="Only unread notifications"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """
+    List notifications for the authenticated user.
+    User-scoped: never exposes another user's notifications.
+    """
+    storage = _get_storage()
+    user_id = current_user["user_id"]
+    notifications = await storage.get_notifications(
+        user_id=user_id,
+        project_id=project_id,
+        unread_only=unread_only,
+        limit=limit,
+        offset=offset,
+    )
+    return {"notifications": notifications}
+
+
+@router.get("/notifications/unread-count")
+async def get_unread_count(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    project_id: Optional[str] = Query(None, description="Filter by project"),
+):
+    """
+    Get the count of unread notifications for the authenticated user.
+    User-scoped: never exposes another user's count.
+    """
+    storage = _get_storage()
+    user_id = current_user["user_id"]
+    count = await storage.count_unread_notifications(user_id=user_id, project_id=project_id)
+    return {"unread_count": count}
+
+
+@router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Mark a single notification as read.
+    User-scoped: only affects the authenticated user's notifications.
+    """
+    storage = _get_storage()
+    user_id = current_user["user_id"]
+    updated = await storage.mark_notification_read(user_id=user_id, notification_id=notification_id)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "read", "notification_id": notification_id}
+
+
+@router.put("/notifications/read-all")
+async def mark_all_read(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    project_id: Optional[str] = Query(None, description="Scope to project"),
+):
+    """
+    Mark all unread notifications as read for the authenticated user.
+    Optionally scoped to a specific project.
+    """
+    storage = _get_storage()
+    user_id = current_user["user_id"]
+    count = await storage.mark_all_notifications_read(user_id=user_id, project_id=project_id)
+    return {"status": "updated", "count": count}
 
 
 # ──────────────────────────────────────────────────────────────────

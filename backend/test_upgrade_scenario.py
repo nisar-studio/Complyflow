@@ -353,7 +353,7 @@ class TestV1UpgradeScenario:
 
             # Verify schema_migrations recorded
             mig_count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
-            assert mig_count == 2
+            assert mig_count == 3
 
             # Verify migration details
             migs = conn.execute(
@@ -361,6 +361,7 @@ class TestV1UpgradeScenario:
             ).fetchall()
             assert migs[0] == ("001", "initial_schema")
             assert migs[1] == ("002", "task_assignment")
+            assert migs[2] == ("003", "notifications")
 
             conn.close()
 
@@ -370,7 +371,7 @@ class TestV1UpgradeScenario:
 
             # Step 7: Verify status
             status = _run(get_migration_status(db_path))
-            assert status["applied_count"] == 2
+            assert status["applied_count"] == 3
             assert status["pending_count"] == 0
 
             # Step 8: Final data integrity check

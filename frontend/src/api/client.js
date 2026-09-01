@@ -373,6 +373,31 @@ export const api = {
     return res.data;
   },
 
+  // ── In-App Notifications ──────────────────────────────
+  getNotifications: async (params = {}) => {
+    const res = await client.get('/notifications', { params });
+    return res.data;
+  },
+
+  getUnreadCount: async (projectId = null) => {
+    const params = {};
+    if (projectId) params.project_id = projectId;
+    const res = await client.get('/notifications/unread-count', { params });
+    return res.data;
+  },
+
+  markNotificationRead: async (notificationId) => {
+    const res = await client.put(`/notifications/${notificationId}/read`);
+    return res.data;
+  },
+
+  markAllNotificationsRead: async (projectId = null) => {
+    const params = {};
+    if (projectId) params.project_id = projectId;
+    const res = await client.put('/notifications/read-all', null, { params });
+    return res.data;
+  },
+
   // ── Enterprise Compliance Analytics ─────────────────────
   getProjectAnalytics: async (projectId) => {
     const res = await client.get(`/projects/${projectId}/analytics`);

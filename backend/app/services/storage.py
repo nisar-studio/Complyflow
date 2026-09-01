@@ -382,6 +382,33 @@ class StorageInterface(ABC):
         """Revoke all active sessions for a user."""
         pass
 
+    # ── In-App Notifications (User-Scoped) ───────────────────
+
+    @abstractmethod
+    async def save_notification(self, user_id: str, notification: Dict[str, Any]) -> str:
+        """Save a notification for a specific user. Returns notification_id."""
+        pass
+
+    @abstractmethod
+    async def get_notifications(self, user_id: str, project_id: Optional[str] = None, unread_only: bool = False, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get notifications for a user, optionally filtered by project and read state."""
+        pass
+
+    @abstractmethod
+    async def count_unread_notifications(self, user_id: str, project_id: Optional[str] = None) -> int:
+        """Count unread notifications for a user."""
+        pass
+
+    @abstractmethod
+    async def mark_notification_read(self, user_id: str, notification_id: str) -> bool:
+        """Mark a single notification as read. Returns True if found and updated."""
+        pass
+
+    @abstractmethod
+    async def mark_all_notifications_read(self, user_id: str, project_id: Optional[str] = None) -> int:
+        """Mark all unread notifications as read. Returns count of updated notifications."""
+        pass
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2010,6 +2037,121 @@ class SQLiteStorageService(StorageInterface):
             )
             await db.commit()
             return res.rowcount > 0
+
+    # ── In-App Notifications (User-Scoped) ──────────────────
+
+    async def save_notification(self, user_id: str, notification: Dict[str, Any]) -> str:
+        await self._init_db()
+        notif_id = notification.get("notification_id") or f"notif_{uuid.uuid4().hex[:12]}"
+        now = self._now()
+        notification["notification_id"] = notif_id
+        notification["user_id"] = user_id
+        notification["created_at"] = notification.get("created_at") or now
+
+        meta = notification.get("metadata") or {}
+        meta_json = json.dumps(meta) if isinstance(meta, dict) else (meta or "{}")
+
+        async with self._connect() as db:
+            await db.execute(
+                """
+                INSERT INTO notifications (notification_id, user_id, project_id, type, title, message, is_read, metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    notif_id,
+                    user_id,
+                    notification.get("project_id"),
+                    notification.get("type", "SYSTEM"),
+                    notification.get("title", ""),
+                    notification.get("message", ""),
+                    1 if notification.get("is_read") else 0,
+                    meta_json,
+                    notification["created_at"],
+                ),
+            )
+            await db.commit()
+        return notif_id
+
+    async def get_notifications(self, user_id: str, project_id: Optional[str] = None, unread_only: bool = False, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        await self._init_db()
+        conditions = ["user_id = ?"]
+        params: List[Any] = [user_id]
+
+        if project_id:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+        if unread_only:
+            conditions.append("is_read = 0")
+
+        where = " AND ".join(conditions)
+        params.extend([limit, offset])
+
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT * FROM notifications WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params,
+            ) as cursor:
+                rows = await cursor.fetchall()
+                results = []
+                for r in rows:
+                    d = dict(r)
+                    meta_json = d.pop("metadata_json", "{}")
+                    try:
+                        d["metadata"] = json.loads(meta_json) if meta_json else {}
+                    except Exception:
+                        d["metadata"] = {}
+                    d["is_read"] = bool(d["is_read"])
+                    results.append(d)
+                return results
+
+    async def count_unread_notifications(self, user_id: str, project_id: Optional[str] = None) -> int:
+        await self._init_db()
+        conditions = ["user_id = ?", "is_read = 0"]
+        params: List[Any] = [user_id]
+
+        if project_id:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+
+        where = " AND ".join(conditions)
+
+        async with self._connect() as db:
+            async with db.execute(
+                f"SELECT COUNT(*) as total FROM notifications WHERE {where}",
+                params,
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+    async def mark_notification_read(self, user_id: str, notification_id: str) -> bool:
+        await self._init_db()
+        async with self._connect() as db:
+            res = await db.execute(
+                "UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?",
+                (notification_id, user_id),
+            )
+            await db.commit()
+            return res.rowcount > 0
+
+    async def mark_all_notifications_read(self, user_id: str, project_id: Optional[str] = None) -> int:
+        await self._init_db()
+        if project_id:
+            async with self._connect() as db:
+                res = await db.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND project_id = ? AND is_read = 0",
+                    (user_id, project_id),
+                )
+                await db.commit()
+                return res.rowcount
+        else:
+            async with self._connect() as db:
+                res = await db.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0",
+                    (user_id,),
+                )
+                await db.commit()
+                return res.rowcount
 
     # ── Frameworks & Framework Requirements ──────────────────
 

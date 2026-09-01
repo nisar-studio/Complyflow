@@ -42,6 +42,7 @@ def _compute_checksum(code: str) -> str:
 _MIGRATION_MODULES: List[str] = [
     "app.migrations.001_initial_schema",
     "app.migrations.002_task_assignment",
+    "app.migrations.003_notifications",
 ]
 
 
