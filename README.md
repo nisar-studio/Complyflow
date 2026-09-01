@@ -38,7 +38,6 @@ ComplyFlow uses **Google ADK** (Agent Development Kit 2.8.0) and **Gemini 3.5+**
 4. `detect_gaps`: Classifies gaps by severity (CRITICAL, HIGH, MEDIUM, LOW)
 5. `create_remediation_plan`: Generates actionable remediation tasks
 6. `verify_compliance`: Performs post-remediation verification
-
 ---
 
 ## 4. Agent Workflow
