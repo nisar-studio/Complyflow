@@ -496,6 +496,24 @@ async def bulk_assign_tasks(
             },
         )
 
+        # Generate in-app notification for the assignee (skip self-assignment)
+        if payload.assigned_to != actor_id:
+            await storage.save_notification(
+                user_id=payload.assigned_to,
+                notification={
+                    "project_id": project_id,
+                    "type": "TASK_ASSIGNED",
+                    "title": "Task Assigned",
+                    "message": f"Task '{target_task.get('title', tid)}' has been assigned to you.",
+                    "metadata": {
+                        "task_id": tid,
+                        "assigned_by": actor_id,
+                        "due_date": payload.due_date,
+                        "bulk_operation": True,
+                    },
+                },
+            )
+
     return {
         "status": "success",
         "assigned_to": payload.assigned_to,

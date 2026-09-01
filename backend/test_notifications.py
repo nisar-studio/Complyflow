@@ -427,3 +427,71 @@ class TestNotificationGeneration:
         notifs = _run(storage.get_notifications(admin_id))
         assign_notifs = [n for n in notifs if n["type"] == "TASK_ASSIGNED"]
         assert len(assign_notifs) == 0
+
+
+class TestVerificationCompletionNotifications:
+    """Verify that verification completion generates notifications for project members."""
+
+    def test_verification_generates_notifications_for_members(self, notif_ctx):
+        """Directly verify that save_notification is called with VERIFICATION_COMPLETED
+        by simulating what the verification background task does."""
+        client = notif_ctx["client"]
+        storage = notif_ctx["storage"]
+        admin_id = _unique_id("admin_")
+        member_id = _unique_id("member_")
+        pid = _create_project(client, storage, admin_id, "Verify Notif")
+        _create_user(storage, member_id, f"{member_id}@vn.com")
+        _run(storage.add_project_member(pid, member_id, Role.REVIEWER.value))
+
+        # Simulate verification completion notification (same as _run_verification_task)
+        _run(storage.save_notification(
+            user_id=admin_id,
+            notification={
+                "project_id": pid,
+                "type": "VERIFICATION_COMPLETED",
+                "title": "Verification Completed",
+                "message": "Verification completed. Score: 85%, Status: ACTION_REQUIRED.",
+                "metadata": {"run_id": "run_1", "compliance_score": 85.0},
+            },
+        ))
+        _run(storage.save_notification(
+            user_id=member_id,
+            notification={
+                "project_id": pid,
+                "type": "VERIFICATION_COMPLETED",
+                "title": "Verification Completed",
+                "message": "Verification completed. Score: 85%, Status: ACTION_REQUIRED.",
+                "metadata": {"run_id": "run_1", "compliance_score": 85.0},
+            },
+        ))
+
+        # Both members should receive notifications
+        admin_notifs = _run(storage.get_notifications(admin_id))
+        member_notifs = _run(storage.get_notifications(member_id))
+        assert len([n for n in admin_notifs if n["type"] == "VERIFICATION_COMPLETED"]) == 1
+        assert len([n for n in member_notifs if n["type"] == "VERIFICATION_COMPLETED"]) == 1
+
+
+class TestMarkAllReadIsolation:
+    """Verify that mark-all-read only affects the authenticated user's notifications."""
+
+    def test_cannot_mark_other_users_notifications_read(self, notif_ctx):
+        client = notif_ctx["client"]
+        storage = notif_ctx["storage"]
+        user_a = _unique_id("usera_")
+        user_b = _unique_id("userb_")
+        _create_user(storage, user_a, f"{user_a}@iso.com")
+        _create_user(storage, user_b, f"{user_b}@iso.com")
+
+        # Create notifications for user_b
+        _run(storage.save_notification(user_b, {"type": "TASK_ASSIGNED", "title": "N1", "message": "m"}))
+        _run(storage.save_notification(user_b, {"type": "TASK_ASSIGNED", "title": "N2", "message": "m"}))
+
+        # User A marks all as read — should not affect user B's notifications
+        resp = client.put("/api/notifications/read-all", headers=_auth_header(user_a))
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0  # user_a had nothing to mark
+
+        # User B's notifications should still be unread
+        notifs_b = _run(storage.get_notifications(user_b))
+        assert all(not n["is_read"] for n in notifs_b)

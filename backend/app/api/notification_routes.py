@@ -78,4 +78,4 @@ async def mark_all_notifications_read(
     storage = _get_storage()
     user_id = current_user["user_id"]
     count = await storage.mark_all_notifications_read(user_id, project_id)
-    return {"status": "read_all", "count": count}
+    return {"status": "updated", "count": count}

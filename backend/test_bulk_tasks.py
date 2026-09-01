@@ -489,3 +489,53 @@ class TestBulkAssignment:
         events = resp_audit.json().get("events", [])
         assign_events = [e for e in events if e.get("event_type") == "TASK_ASSIGNED" and e.get("metadata", {}).get("bulk_operation")]
         assert len(assign_events) == 2
+
+
+class TestBulkAssignmentNotifications:
+    """Verify that bulk assignment generates notifications for each assigned task."""
+
+    def test_bulk_assign_generates_notifications(self, bulk_ctx):
+        client = bulk_ctx["client"]
+        storage = bulk_ctx["storage"]
+        admin_id = _unique_id("admin_")
+        member_id = _unique_id("member_")
+        pid = _create_project(client, storage, admin_id, "Bulk Notif")
+        _create_user(storage, member_id, f"{member_id}@bn.com")
+        _run(storage.add_project_member(pid, member_id, Role.REVIEWER.value))
+
+        tasks = _seed_tasks(storage, pid, 3)
+        task_ids = [t["task_id"] for t in tasks]
+
+        resp = client.post(
+            f"/api/projects/{pid}/bulk/tasks/assign",
+            json={"task_ids": task_ids, "assigned_to": member_id},
+            headers=_auth_header(admin_id),
+        )
+        assert resp.status_code == 200
+
+        # Verify notifications were created for the assignee
+        notifs = _run(storage.get_notifications(member_id))
+        assign_notifs = [n for n in notifs if n["type"] == "TASK_ASSIGNED" and n.get("metadata", {}).get("bulk_operation")]
+        assert len(assign_notifs) == 3
+
+    def test_bulk_assign_self_assignment_no_notification(self, bulk_ctx):
+        client = bulk_ctx["client"]
+        storage = bulk_ctx["storage"]
+        admin_id = _unique_id("admin_")
+        pid = _create_project(client, storage, admin_id, "Self Bulk")
+
+        tasks = _seed_tasks(storage, pid, 2)
+        task_ids = [t["task_id"] for t in tasks]
+
+        # Admin assigns to themselves
+        resp = client.post(
+            f"/api/projects/{pid}/bulk/tasks/assign",
+            json={"task_ids": task_ids, "assigned_to": admin_id},
+            headers=_auth_header(admin_id),
+        )
+        assert resp.status_code == 200
+
+        # Should NOT generate notifications for self-assignment
+        notifs = _run(storage.get_notifications(admin_id))
+        assign_notifs = [n for n in notifs if n["type"] == "TASK_ASSIGNED" and n.get("metadata", {}).get("bulk_operation")]
+        assert len(assign_notifs) == 0

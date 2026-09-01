@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User, Clock, Calendar, Square, MinusSquare } from "lucide-react";
+import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User, Clock, Calendar, Square } from "lucide-react";
 import TaskUploadPanel from "./TaskUploadPanel";
 import api from "../api/client";
 
