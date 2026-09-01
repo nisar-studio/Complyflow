@@ -3,7 +3,7 @@
 > Autonomous AI Compliance Agent
 > *"From requirements to ready-to-submit. Autonomously."*
 
-Built for the **All Things Agentic Hackathon**.
+
 
 ---
 
@@ -38,7 +38,6 @@ ComplyFlow uses **Google ADK** (Agent Development Kit 2.8.0) and **Gemini 3.5+**
 4. `detect_gaps`: Classifies gaps by severity (CRITICAL, HIGH, MEDIUM, LOW)
 5. `create_remediation_plan`: Generates actionable remediation tasks
 6. `verify_compliance`: Performs post-remediation verification
-
 ---
 
 ## 4. Agent Workflow
@@ -174,8 +173,3 @@ gcloud run deploy complyflow-api \
 
 ---
 
-## 11. Hackathon & Attribution
-
-Built for the **All Things Agentic Hackathon**.
-Uses official Google technologies: Gemini, Google ADK, Google Cloud Firestore, and Cloud Run.
-*(Note: Independent hackathon submission; not an official Google product).*
