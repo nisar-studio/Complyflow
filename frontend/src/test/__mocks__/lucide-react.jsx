@@ -57,5 +57,7 @@ export const BarChart3 = iconStub('BarChart3');
 export const TrendingUp = iconStub('TrendingUp');
 export const Minus = iconStub('Minus');
 export const Users = iconStub('Users');
+export const UserPlus = iconStub('UserPlus');
+export const User = iconStub('User');
 
 export default {};

@@ -343,6 +343,14 @@ export const api = {
     return res.data;
   },
 
+  // ── Task Assignment ───────────────────────────────────
+  assignTask: async (projectId, taskId, assignedTo, dueDate = null) => {
+    const payload = { assigned_to: assignedTo };
+    if (dueDate) payload.due_date = dueDate;
+    const res = await client.put(`/projects/${projectId}/tasks/${taskId}/assign`, payload);
+    return res.data;
+  },
+
   // ── Enterprise Compliance Analytics ─────────────────────
   getProjectAnalytics: async (projectId) => {
     const res = await client.get(`/projects/${projectId}/analytics`);

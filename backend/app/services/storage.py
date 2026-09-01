@@ -141,6 +141,11 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
+    async def assign_task(self, project_id: str, task_id: str, assigned_to: str, assigned_by: str, due_date: Optional[str] = None) -> None:
+        """Assign a task to a user. Updates assignment columns and data_json."""
+        pass
+
+    @abstractmethod
     async def save_matches(self, project_id: str, matches: List[Dict[str, Any]]) -> None:
         """Store requirement-to-evidence matches."""
         pass
@@ -1136,6 +1141,31 @@ class SQLiteStorageService(StorageInterface):
                         (status, json.dumps(task_data), project_id, task_id),
                     )
                     await db.commit()
+
+    async def assign_task(self, project_id: str, task_id: str, assigned_to: str, assigned_by: str, due_date: Optional[str] = None) -> None:
+        await self._init_db()
+        now = self._now()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT data_json FROM tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row["data_json"]:
+                    return
+                task_data = json.loads(row["data_json"])
+                task_data["assigned_to"] = assigned_to
+                task_data["assigned_at"] = now
+                task_data["assigned_by"] = assigned_by
+                if due_date is not None:
+                    task_data["due_date"] = due_date
+                update_due = due_date if due_date is not None else task_data.get("due_date")
+                await db.execute(
+                    "UPDATE tasks SET assigned_to = ?, assigned_at = ?, assigned_by = ?, due_date = ?, data_json = ? WHERE project_id = ? AND task_id = ?",
+                    (assigned_to, now, assigned_by, update_due, json.dumps(task_data), project_id, task_id),
+                )
+                await db.commit()
 
     # ── Agent Events ─────────────────────────────────────────
 
@@ -2238,6 +2268,23 @@ class FirestoreStorageService(StorageInterface):
             .document(task_id)
         )
         await ref.update({"status": status})
+
+    async def assign_task(self, project_id: str, task_id: str, assigned_to: str, assigned_by: str, due_date: Optional[str] = None) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        ref = (
+            self._db.collection("projects")
+            .document(project_id)
+            .collection("tasks")
+            .document(task_id)
+        )
+        updates: Dict[str, Any] = {
+            "assigned_to": assigned_to,
+            "assigned_at": now,
+            "assigned_by": assigned_by,
+        }
+        if due_date is not None:
+            updates["due_date"] = due_date
+        await ref.update(updates)
 
     async def save_matches(self, project_id: str, matches: List[Dict[str, Any]]) -> None:
         batch = self._db.batch()

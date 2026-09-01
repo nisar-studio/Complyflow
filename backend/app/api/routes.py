@@ -1744,6 +1744,11 @@ class TaskStatusPayload(BaseModel):
     status: str
 
 
+class TaskAssignPayload(BaseModel):
+    assigned_to: str
+    due_date: Optional[str] = None
+
+
 VALID_TASK_STATUSES = {"OPEN", "RESOLVED"}
 
 
@@ -1808,6 +1813,94 @@ async def update_task_status(
         "task_id": task_id,
         "old_status": old_status,
         "new_status": status_upper,
+    }
+
+
+@router.put("/projects/{project_id}/tasks/{task_id}/assign")
+async def assign_task(
+    project_id: str,
+    task_id: str,
+    payload: TaskAssignPayload,
+    ctx: Dict[str, Any] = Depends(require_permission("remediation:manage")),
+):
+    """
+    Assign a remediation task to a project member.
+    Only ADMIN/AUDITOR roles may assign tasks.
+    Emits an immutable TASK_ASSIGNED audit event.
+    """
+    storage = _get_storage()
+
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Verify the task belongs to this project
+    tasks = await storage.get_tasks(project_id)
+    target_task = next((t for t in tasks if t.get("task_id") == task_id), None)
+    if not target_task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found in this project")
+
+    # Verify target user is an active member of this project
+    member = await storage.get_project_member(project_id, payload.assigned_to)
+    if not member:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User '{payload.assigned_to}' is not a member of this project",
+        )
+    if not member.get("is_active", True):
+        raise HTTPException(
+            status_code=400,
+            detail=f"User '{payload.assigned_to}' is not an active member",
+        )
+
+    # Validate due_date if provided
+    if payload.due_date:
+        try:
+            from datetime import datetime as _dt
+            _dt.fromisoformat(payload.due_date.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid due_date '{payload.due_date}'. Must be ISO-8601.",
+            )
+
+    old_assignee = target_task.get("assigned_to")
+    await storage.assign_task(
+        project_id=project_id,
+        task_id=task_id,
+        assigned_to=payload.assigned_to,
+        assigned_by=ctx.get("user", {}).get("user_id"),
+        due_date=payload.due_date,
+    )
+
+    actor = ctx.get("user", {})
+    actor_id = actor.get("user_id")
+
+    await record_audit_event(
+        storage=storage,
+        project_id=project_id,
+        event_type="TASK_ASSIGNED",
+        actor_type="AUDITOR",
+        actor_id=actor_id,
+        task_id=task_id,
+        requirement_id=target_task.get("related_requirement_id"),
+        summary=f"Task '{task_id}' assigned to '{payload.assigned_to}' by '{actor_id}'.",
+        metadata={
+            "task_id": task_id,
+            "old_assignee": old_assignee,
+            "new_assignee": payload.assigned_to,
+            "assigned_by": actor_id,
+            "due_date": payload.due_date,
+            "task_title": target_task.get("title"),
+        },
+    )
+
+    return {
+        "status": "assigned",
+        "task_id": task_id,
+        "assigned_to": payload.assigned_to,
+        "assigned_by": actor_id,
+        "due_date": payload.due_date,
     }
 
 

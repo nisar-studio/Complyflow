@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from "react";
-import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2 } from "lucide-react";
+import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User } from "lucide-react";
 import TaskUploadPanel from "./TaskUploadPanel";
 import api from "../api/client";
 
-export default function RemediationList({ tasks = [], projectId, requirements = [] }) {
+export default function RemediationList({ tasks = [], projectId, requirements = [], members = [] }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [assigningTaskId, setAssigningTaskId] = useState(null);
   const [taskError, setTaskError] = useState(null);
   const [taskSuccess, setTaskSuccess] = useState(null);
 
@@ -26,6 +27,20 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
       setTaskError(err.response?.data?.detail || err.message || "Failed to update task status");
     } finally {
       setUpdatingTaskId(null);
+    }
+  };
+
+  const handleAssignTask = async (task, userId) => {
+    setAssigningTaskId(task.task_id);
+    try {
+      await api.assignTask(projectId, task.task_id, userId);
+      task.assigned_to = userId;
+      setTaskSuccess(`Task ${task.task_id} assigned successfully.`);
+      setTimeout(() => setTaskSuccess(null), 3000);
+    } catch (err) {
+      setTaskError(err.response?.data?.detail || err.message || "Failed to assign task");
+    } finally {
+      setAssigningTaskId(null);
     }
   };
 
@@ -187,6 +202,35 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
                   <p className="text-xs text-slate-300">{task.description}</p>
                 </div>
               </div>
+
+              {/* ASSIGNMENT INFO */}
+              {projectId && members.length > 0 && (
+                <div className="flex items-center gap-2 text-xs">
+                  {task.assigned_to ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300">
+                      <User className="w-3 h-3 text-slate-400" />
+                      <span className="font-mono text-slate-400">Assigned:</span>
+                      <span className="font-semibold text-white">
+                        {members.find(m => m.user_id === task.assigned_to)?.name || task.assigned_to}
+                      </span>
+                    </span>
+                  ) : (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) handleAssignTask(task, e.target.value);
+                      }}
+                      disabled={assigningTaskId === task.task_id}
+                      className="bg-slate-900 border border-slate-700 text-slate-400 rounded-lg px-2.5 py-1 text-[11px] font-mono focus:outline-none focus:border-brand-500 disabled:opacity-50"
+                    >
+                      <option value="">Assign to member...</option>
+                      {members.filter(m => m.is_active !== false).map(m => (
+                        <option key={m.user_id} value={m.user_id}>{m.name || m.email}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
 
               {/* RESOLVE / REOPEN BUTTON */}
               {projectId && (
