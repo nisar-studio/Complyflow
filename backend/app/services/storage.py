@@ -146,6 +146,11 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
+    async def update_task_due_date(self, project_id: str, task_id: str, due_date: Optional[str]) -> None:
+        """Set or clear the due date for a task. None clears the due date."""
+        pass
+
+    @abstractmethod
     async def save_matches(self, project_id: str, matches: List[Dict[str, Any]]) -> None:
         """Store requirement-to-evidence matches."""
         pass
@@ -1164,6 +1169,30 @@ class SQLiteStorageService(StorageInterface):
                 await db.execute(
                     "UPDATE tasks SET assigned_to = ?, assigned_at = ?, assigned_by = ?, due_date = ?, data_json = ? WHERE project_id = ? AND task_id = ?",
                     (assigned_to, now, assigned_by, update_due, json.dumps(task_data), project_id, task_id),
+                )
+                await db.commit()
+
+    async def update_task_due_date(self, project_id: str, task_id: str, due_date: Optional[str]) -> None:
+        """Set or clear the due date for a task. None clears the due date."""
+        await self._init_db()
+        now = self._now()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT data_json FROM tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row["data_json"]:
+                    return
+                task_data = json.loads(row["data_json"])
+                if due_date is None:
+                    task_data.pop("due_date", None)
+                else:
+                    task_data["due_date"] = due_date
+                await db.execute(
+                    "UPDATE tasks SET due_date = ?, data_json = ? WHERE project_id = ? AND task_id = ?",
+                    (due_date, json.dumps(task_data), project_id, task_id),
                 )
                 await db.commit()
 
@@ -2285,6 +2314,19 @@ class FirestoreStorageService(StorageInterface):
         if due_date is not None:
             updates["due_date"] = due_date
         await ref.update(updates)
+
+    async def update_task_due_date(self, project_id: str, task_id: str, due_date: Optional[str]) -> None:
+        from google.cloud import firestore as _fs
+        ref = (
+            self._db.collection("projects")
+            .document(project_id)
+            .collection("tasks")
+            .document(task_id)
+        )
+        if due_date is None:
+            await ref.update({"due_date": _fs.DELETE_FIELD})
+        else:
+            await ref.update({"due_date": due_date})
 
     async def save_matches(self, project_id: str, matches: List[Dict[str, Any]]) -> None:
         batch = self._db.batch()

@@ -13,6 +13,8 @@ vi.mock('../components/TaskUploadPanel', () => ({
 vi.mock('../api/client', () => ({
   default: {
     updateTaskStatus: vi.fn(),
+    assignTask: vi.fn(),
+    setTaskDueDate: vi.fn(),
   },
 }));
 
@@ -181,5 +183,60 @@ describe('RemediationList', () => {
     expect(screen.getByText('TASK-001')).toBeInTheDocument();
     expect(screen.getByText('TASK-002')).toBeInTheDocument();
     expect(screen.getByText('TASK-003')).toBeInTheDocument();
+  });
+
+  describe('Due Date functionality', () => {
+    it('shows set due date button when no due_date is set', () => {
+      render(<RemediationList tasks={makeTasks()} projectId="proj-1" />);
+      const buttons = screen.getAllByText('Set due date');
+      expect(buttons.length).toBe(3); // all tasks have no due_date
+    });
+
+    it('shows due date when set', () => {
+      const tasks = makeTasks();
+      tasks[0].due_date = '2026-12-31T23:59:59Z';
+      render(<RemediationList tasks={tasks} projectId="proj-1" />);
+      expect(screen.getByText(/Due:/)).toBeInTheDocument();
+      // Date formatting varies by locale — just check the element exists
+      const dueBadge = screen.getByText(/Due:/).closest('span');
+      expect(dueBadge).toBeInTheDocument();
+    });
+
+    it('shows overdue badge for past due dates on OPEN tasks', () => {
+      const tasks = makeTasks();
+      tasks[0].due_date = '2020-01-01T00:00:00Z';
+      tasks[0].status = 'OPEN';
+      render(<RemediationList tasks={tasks} projectId="proj-1" />);
+      expect(screen.getByText('Overdue')).toBeInTheDocument();
+    });
+
+    it('does not show overdue for resolved tasks', () => {
+      const tasks = makeTasks();
+      tasks[0].due_date = '2020-01-01T00:00:00Z';
+      tasks[0].status = 'RESOLVED';
+      render(<RemediationList tasks={tasks} projectId="proj-1" />);
+      expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
+    });
+
+    it('shows date input after clicking set due date', async () => {
+      const user = userEvent.setup();
+      render(<RemediationList tasks={makeTasks()} projectId="proj-1" />);
+
+      const setButtons = screen.getAllByText('Set due date');
+      expect(setButtons.length).toBe(3);
+      await user.click(setButtons[0]);
+
+      // Date input should appear after clicking
+      const dateInput = screen.getByRole('textbox', { type: 'date' });
+      expect(dateInput).toBeInTheDocument();
+
+      // Clear button should appear for tasks without due date
+      expect(screen.getByText('Cancel')).toBeInTheDocument();
+    });
+
+    it('does not show due date UI when projectId is not provided', () => {
+      render(<RemediationList tasks={makeTasks()} />);
+      expect(screen.queryByText('Set due date')).not.toBeInTheDocument();
+    });
   });
 });

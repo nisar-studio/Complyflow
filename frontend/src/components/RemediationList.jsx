@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User } from "lucide-react";
+import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User, Clock, Calendar } from "lucide-react";
 import TaskUploadPanel from "./TaskUploadPanel";
 import api from "../api/client";
 
@@ -9,6 +9,7 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [assigningTaskId, setAssigningTaskId] = useState(null);
+  const [editingDueDateTaskId, setEditingDueDateTaskId] = useState(null);
   const [taskError, setTaskError] = useState(null);
   const [taskSuccess, setTaskSuccess] = useState(null);
 
@@ -41,6 +42,38 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
       setTaskError(err.response?.data?.detail || err.message || "Failed to assign task");
     } finally {
       setAssigningTaskId(null);
+    }
+  };
+
+  const handleSetDueDate = async (task, newDueDate) => {
+    setEditingDueDateTaskId(null);
+    try {
+      await api.setTaskDueDate(projectId, task.task_id, newDueDate || null);
+      task.due_date = newDueDate || undefined;
+      setTaskSuccess(newDueDate ? `Due date updated for ${task.task_id}.` : `Due date cleared for ${task.task_id}.`);
+      setTimeout(() => setTaskSuccess(null), 3000);
+    } catch (err) {
+      setTaskError(err.response?.data?.detail || err.message || "Failed to update due date");
+    }
+  };
+
+  const isOverdue = (task) => {
+    if (!task.due_date || task.status === "RESOLVED") return false;
+    try {
+      const due = new Date(task.due_date);
+      return due < new Date();
+    } catch {
+      return false;
+    }
+  };
+
+  const formatDueDate = (dateStr) => {
+    if (!dateStr) return null;
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return dateStr;
     }
   };
 
@@ -202,6 +235,64 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
                   <p className="text-xs text-slate-300">{task.description}</p>
                 </div>
               </div>
+
+              {/* DUE DATE INFO */}
+              {projectId && (
+                <div className="flex items-center gap-2 text-xs">
+                  {editingDueDateTaskId === task.task_id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        defaultValue={task.due_date ? task.due_date.split("T")[0] : ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) {
+                            handleSetDueDate(task, val + "T23:59:59Z");
+                          }
+                        }}
+                        className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2.5 py-1 text-[11px] font-mono focus:outline-none focus:border-brand-500"
+                      />
+                      <button
+                        onClick={() => {
+                          if (task.due_date) handleSetDueDate(task, null);
+                          else setEditingDueDateTaskId(null);
+                        }}
+                        className="text-[10px] text-slate-500 hover:text-slate-300 font-mono"
+                      >
+                        {task.due_date ? "Clear" : "Cancel"}
+                      </button>
+                    </div>
+                  ) : task.due_date ? (
+                    <span
+                      onClick={() => setEditingDueDateTaskId(task.task_id)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border cursor-pointer transition-all ${
+                        isOverdue(task)
+                          ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/15"
+                          : "bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800"
+                      }`}
+                    >
+                      <Clock className="w-3 h-3" />
+                      <span className="font-mono text-slate-400">Due:</span>
+                      <span className="font-semibold">
+                        {formatDueDate(task.due_date)}
+                      </span>
+                      {isOverdue(task) && (
+                        <span className="text-[9px] font-bold uppercase px-1 py-0.5 rounded bg-red-500/20 text-red-400">
+                          Overdue
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setEditingDueDateTaskId(task.task_id)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700 transition-all text-[11px] font-mono"
+                    >
+                      <Calendar className="w-3 h-3" />
+                      <span>Set due date</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* ASSIGNMENT INFO */}
               {projectId && members.length > 0 && (

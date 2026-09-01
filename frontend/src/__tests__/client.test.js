@@ -210,6 +210,30 @@ describe('API Client', () => {
     });
   });
 
+  describe('Task due date', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('setTaskDueDate calls PUT /projects/:id/tasks/:taskId/due-date', async () => {
+      axios.put.mockResolvedValueOnce({ data: { status: 'updated', due_date: '2026-12-31T23:59:59Z' } });
+      const result = await api.setTaskDueDate('proj-1', 'task-1', '2026-12-31T23:59:59Z');
+      expect(axios.put).toHaveBeenCalledWith('/projects/proj-1/tasks/task-1/due-date', {
+        due_date: '2026-12-31T23:59:59Z',
+      });
+      expect(result).toEqual({ status: 'updated', due_date: '2026-12-31T23:59:59Z' });
+    });
+
+    it('setTaskDueDate with null clears due date', async () => {
+      axios.put.mockResolvedValueOnce({ data: { status: 'updated', due_date: null } });
+      const result = await api.setTaskDueDate('proj-1', 'task-1', null);
+      expect(axios.put).toHaveBeenCalledWith('/projects/proj-1/tasks/task-1/due-date', {
+        due_date: null,
+      });
+      expect(result.due_date).toBeNull();
+    });
+  });
+
   describe('Member endpoints', () => {
     beforeEach(() => {
       vi.clearAllMocks();

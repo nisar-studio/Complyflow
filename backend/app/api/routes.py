@@ -1905,6 +1905,83 @@ async def assign_task(
 
 
 # ──────────────────────────────────────────────────────────────────
+# Due Date Management
+# ──────────────────────────────────────────────────────────────────
+
+class TaskDueDatePayload(BaseModel):
+    due_date: Optional[str] = None  # null to clear
+
+
+@router.put("/projects/{project_id}/tasks/{task_id}/due-date")
+async def update_task_due_date(
+    project_id: str,
+    task_id: str,
+    payload: TaskDueDatePayload,
+    ctx: Dict[str, Any] = Depends(require_permission("remediation:manage")),
+):
+    """
+    Set, change, or clear the due date for a remediation task.
+    Only ADMIN/AUDITOR roles may modify due dates.
+    Send due_date: null to clear the due date.
+    Overdue status is informational only — it does not block verification.
+    """
+    storage = _get_storage()
+
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Verify the task belongs to this project
+    tasks = await storage.get_tasks(project_id)
+    target_task = next((t for t in tasks if t.get("task_id") == task_id), None)
+    if not target_task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found in this project")
+
+    old_due_date = target_task.get("due_date")
+
+    # Validate due_date format if provided
+    if payload.due_date is not None:
+        try:
+            from datetime import datetime as _dt
+            _dt.fromisoformat(payload.due_date.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid due_date '{payload.due_date}'. Must be ISO-8601.",
+            )
+
+    await storage.update_task_due_date(project_id, task_id, payload.due_date)
+
+    actor = ctx.get("user", {})
+    actor_id = actor.get("user_id")
+
+    action = "set" if payload.due_date else "cleared"
+    await record_audit_event(
+        storage=storage,
+        project_id=project_id,
+        event_type="TASK_DUE_DATE_UPDATED",
+        actor_type="AUDITOR",
+        actor_id=actor_id,
+        task_id=task_id,
+        requirement_id=target_task.get("related_requirement_id"),
+        summary=f"Task '{task_id}' due date {action} by '{actor_id}'.",
+        metadata={
+            "task_id": task_id,
+            "old_due_date": old_due_date,
+            "new_due_date": payload.due_date,
+            "action": action,
+            "task_title": target_task.get("title"),
+        },
+    )
+
+    return {
+        "status": "updated",
+        "task_id": task_id,
+        "due_date": payload.due_date,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────
 # Audit Activity Timeline API
 # ──────────────────────────────────────────────────────────────────
 

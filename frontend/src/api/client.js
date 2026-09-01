@@ -351,6 +351,12 @@ export const api = {
     return res.data;
   },
 
+  // ── Due Date Management ───────────────────────────────
+  setTaskDueDate: async (projectId, taskId, dueDate) => {
+    const res = await client.put(`/projects/${projectId}/tasks/${taskId}/due-date`, { due_date: dueDate });
+    return res.data;
+  },
+
   // ── Enterprise Compliance Analytics ─────────────────────
   getProjectAnalytics: async (projectId) => {
     const res = await client.get(`/projects/${projectId}/analytics`);
