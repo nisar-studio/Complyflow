@@ -141,6 +141,16 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
+    async def assign_task(self, project_id: str, task_id: str, assigned_to: str, assigned_by: str, due_date: Optional[str] = None) -> None:
+        """Assign a task to a user. Updates assignment columns and data_json."""
+        pass
+
+    @abstractmethod
+    async def update_task_due_date(self, project_id: str, task_id: str, due_date: Optional[str]) -> None:
+        """Set or clear the due date for a task. None clears the due date."""
+        pass
+
+    @abstractmethod
     async def save_matches(self, project_id: str, matches: List[Dict[str, Any]]) -> None:
         """Store requirement-to-evidence matches."""
         pass
@@ -370,6 +380,33 @@ class StorageInterface(ABC):
     @abstractmethod
     async def revoke_user_sessions(self, user_id: str) -> bool:
         """Revoke all active sessions for a user."""
+        pass
+
+    # ── In-App Notifications (User-Scoped) ───────────────────
+
+    @abstractmethod
+    async def save_notification(self, user_id: str, notification: Dict[str, Any]) -> str:
+        """Save a notification for a specific user. Returns notification_id."""
+        pass
+
+    @abstractmethod
+    async def get_notifications(self, user_id: str, project_id: Optional[str] = None, unread_only: bool = False, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get notifications for a user, optionally filtered by project and read state."""
+        pass
+
+    @abstractmethod
+    async def count_unread_notifications(self, user_id: str, project_id: Optional[str] = None) -> int:
+        """Count unread notifications for a user."""
+        pass
+
+    @abstractmethod
+    async def mark_notification_read(self, user_id: str, notification_id: str) -> bool:
+        """Mark a single notification as read. Returns True if found and updated."""
+        pass
+
+    @abstractmethod
+    async def mark_all_notifications_read(self, user_id: str, project_id: Optional[str] = None) -> int:
+        """Mark all unread notifications as read. Returns count of updated notifications."""
         pass
 
 
@@ -1136,6 +1173,55 @@ class SQLiteStorageService(StorageInterface):
                         (status, json.dumps(task_data), project_id, task_id),
                     )
                     await db.commit()
+
+    async def assign_task(self, project_id: str, task_id: str, assigned_to: str, assigned_by: str, due_date: Optional[str] = None) -> None:
+        await self._init_db()
+        now = self._now()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT data_json FROM tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row["data_json"]:
+                    return
+                task_data = json.loads(row["data_json"])
+                task_data["assigned_to"] = assigned_to
+                task_data["assigned_at"] = now
+                task_data["assigned_by"] = assigned_by
+                if due_date is not None:
+                    task_data["due_date"] = due_date
+                update_due = due_date if due_date is not None else task_data.get("due_date")
+                await db.execute(
+                    "UPDATE tasks SET assigned_to = ?, assigned_at = ?, assigned_by = ?, due_date = ?, data_json = ? WHERE project_id = ? AND task_id = ?",
+                    (assigned_to, now, assigned_by, update_due, json.dumps(task_data), project_id, task_id),
+                )
+                await db.commit()
+
+    async def update_task_due_date(self, project_id: str, task_id: str, due_date: Optional[str]) -> None:
+        """Set or clear the due date for a task. None clears the due date."""
+        await self._init_db()
+        now = self._now()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT data_json FROM tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row or not row["data_json"]:
+                    return
+                task_data = json.loads(row["data_json"])
+                if due_date is None:
+                    task_data.pop("due_date", None)
+                else:
+                    task_data["due_date"] = due_date
+                await db.execute(
+                    "UPDATE tasks SET due_date = ?, data_json = ? WHERE project_id = ? AND task_id = ?",
+                    (due_date, json.dumps(task_data), project_id, task_id),
+                )
+                await db.commit()
 
     # ── Agent Events ─────────────────────────────────────────
 
@@ -1952,6 +2038,121 @@ class SQLiteStorageService(StorageInterface):
             await db.commit()
             return res.rowcount > 0
 
+    # ── In-App Notifications (User-Scoped) ──────────────────
+
+    async def save_notification(self, user_id: str, notification: Dict[str, Any]) -> str:
+        await self._init_db()
+        notif_id = notification.get("notification_id") or f"notif_{uuid.uuid4().hex[:12]}"
+        now = self._now()
+        notification["notification_id"] = notif_id
+        notification["user_id"] = user_id
+        notification["created_at"] = notification.get("created_at") or now
+
+        meta = notification.get("metadata") or {}
+        meta_json = json.dumps(meta) if isinstance(meta, dict) else (meta or "{}")
+
+        async with self._connect() as db:
+            await db.execute(
+                """
+                INSERT INTO notifications (notification_id, user_id, project_id, type, title, message, is_read, metadata_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    notif_id,
+                    user_id,
+                    notification.get("project_id"),
+                    notification.get("type", "SYSTEM"),
+                    notification.get("title", ""),
+                    notification.get("message", ""),
+                    1 if notification.get("is_read") else 0,
+                    meta_json,
+                    notification["created_at"],
+                ),
+            )
+            await db.commit()
+        return notif_id
+
+    async def get_notifications(self, user_id: str, project_id: Optional[str] = None, unread_only: bool = False, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        await self._init_db()
+        conditions = ["user_id = ?"]
+        params: List[Any] = [user_id]
+
+        if project_id:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+        if unread_only:
+            conditions.append("is_read = 0")
+
+        where = " AND ".join(conditions)
+        params.extend([limit, offset])
+
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT * FROM notifications WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params,
+            ) as cursor:
+                rows = await cursor.fetchall()
+                results = []
+                for r in rows:
+                    d = dict(r)
+                    meta_json = d.pop("metadata_json", "{}")
+                    try:
+                        d["metadata"] = json.loads(meta_json) if meta_json else {}
+                    except Exception:
+                        d["metadata"] = {}
+                    d["is_read"] = bool(d["is_read"])
+                    results.append(d)
+                return results
+
+    async def count_unread_notifications(self, user_id: str, project_id: Optional[str] = None) -> int:
+        await self._init_db()
+        conditions = ["user_id = ?", "is_read = 0"]
+        params: List[Any] = [user_id]
+
+        if project_id:
+            conditions.append("project_id = ?")
+            params.append(project_id)
+
+        where = " AND ".join(conditions)
+
+        async with self._connect() as db:
+            async with db.execute(
+                f"SELECT COUNT(*) as total FROM notifications WHERE {where}",
+                params,
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+    async def mark_notification_read(self, user_id: str, notification_id: str) -> bool:
+        await self._init_db()
+        async with self._connect() as db:
+            res = await db.execute(
+                "UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?",
+                (notification_id, user_id),
+            )
+            await db.commit()
+            return res.rowcount > 0
+
+    async def mark_all_notifications_read(self, user_id: str, project_id: Optional[str] = None) -> int:
+        await self._init_db()
+        if project_id:
+            async with self._connect() as db:
+                res = await db.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND project_id = ? AND is_read = 0",
+                    (user_id, project_id),
+                )
+                await db.commit()
+                return res.rowcount
+        else:
+            async with self._connect() as db:
+                res = await db.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0",
+                    (user_id,),
+                )
+                await db.commit()
+                return res.rowcount
+
     # ── Frameworks & Framework Requirements ──────────────────
 
     async def create_framework(self, framework_data: Dict[str, Any], requirements: List[Dict[str, Any]]) -> str:
@@ -2238,6 +2439,36 @@ class FirestoreStorageService(StorageInterface):
             .document(task_id)
         )
         await ref.update({"status": status})
+
+    async def assign_task(self, project_id: str, task_id: str, assigned_to: str, assigned_by: str, due_date: Optional[str] = None) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        ref = (
+            self._db.collection("projects")
+            .document(project_id)
+            .collection("tasks")
+            .document(task_id)
+        )
+        updates: Dict[str, Any] = {
+            "assigned_to": assigned_to,
+            "assigned_at": now,
+            "assigned_by": assigned_by,
+        }
+        if due_date is not None:
+            updates["due_date"] = due_date
+        await ref.update(updates)
+
+    async def update_task_due_date(self, project_id: str, task_id: str, due_date: Optional[str]) -> None:
+        from google.cloud import firestore as _fs
+        ref = (
+            self._db.collection("projects")
+            .document(project_id)
+            .collection("tasks")
+            .document(task_id)
+        )
+        if due_date is None:
+            await ref.update({"due_date": _fs.DELETE_FIELD})
+        else:
+            await ref.update({"due_date": due_date})
 
     async def save_matches(self, project_id: str, matches: List[Dict[str, Any]]) -> None:
         batch = self._db.batch()

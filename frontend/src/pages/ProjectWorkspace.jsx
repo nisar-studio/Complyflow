@@ -31,6 +31,7 @@ export default function ProjectWorkspace() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('activity'); // activity | results | remediation | summary
   const [projectRole, setProjectRole] = useState(null); // current user's role in this project
+  const [projectMembers, setProjectMembers] = useState([]);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showFrameworkModal, setShowFrameworkModal] = useState(false);
 
@@ -58,10 +59,12 @@ export default function ProjectWorkspace() {
       if (user) {
         try {
           const membersData = await api.listMembers(projectId);
+          setProjectMembers(membersData || []);
           const me = membersData?.find((m) => m.user_id === user.user_id);
           setProjectRole(me?.role || null);
         } catch {
           setProjectRole(null);
+          setProjectMembers([]);
         }
       }
 
@@ -429,6 +432,7 @@ export default function ProjectWorkspace() {
               tasks={tasks}
               projectId={projectId}
               requirements={results?.requirements || []}
+              members={projectMembers}
             />
           </div>
         )}

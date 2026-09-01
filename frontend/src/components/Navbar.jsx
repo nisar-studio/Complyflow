@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ShieldCheck, Plus, LayoutDashboard, LogOut, ChevronDown, User } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 import { useAuth } from '../context/AuthContext';
 
 const ROLE_BADGE = {
@@ -74,6 +75,8 @@ export default function Navbar({ projectRole }) {
               <span>New Check</span>
             </Link>
           )}
+
+          {user && <NotificationBell className="hidden sm:flex" />}
 
           {user ? (
             <div className="relative">

@@ -343,6 +343,61 @@ export const api = {
     return res.data;
   },
 
+  // ── Task Assignment ───────────────────────────────────
+  assignTask: async (projectId, taskId, assignedTo, dueDate = null) => {
+    const payload = { assigned_to: assignedTo };
+    if (dueDate) payload.due_date = dueDate;
+    const res = await client.put(`/projects/${projectId}/tasks/${taskId}/assign`, payload);
+    return res.data;
+  },
+
+  // ── Due Date Management ───────────────────────────────
+  setTaskDueDate: async (projectId, taskId, dueDate) => {
+    const res = await client.put(`/projects/${projectId}/tasks/${taskId}/due-date`, { due_date: dueDate });
+    return res.data;
+  },
+
+  // ── Bulk Task Operations ─────────────────────────────
+  bulkUpdateTaskStatus: async (projectId, taskIds, status) => {
+    const res = await client.post(`/projects/${projectId}/bulk/tasks/status`, {
+      task_ids: taskIds,
+      status,
+    });
+    return res.data;
+  },
+
+  bulkAssignTasks: async (projectId, taskIds, assignedTo, dueDate = null) => {
+    const payload = { task_ids: taskIds, assigned_to: assignedTo };
+    if (dueDate) payload.due_date = dueDate;
+    const res = await client.post(`/projects/${projectId}/bulk/tasks/assign`, payload);
+    return res.data;
+  },
+
+  // ── In-App Notifications ──────────────────────────────
+  getNotifications: async (params = {}) => {
+    const res = await client.get('/notifications', { params });
+    return res.data;
+  },
+
+  getUnreadCount: async (projectId = null) => {
+    const params = {};
+    if (projectId) params.project_id = projectId;
+    const res = await client.get('/notifications/unread-count', { params });
+    return res.data;
+  },
+
+  markNotificationRead: async (notificationId) => {
+    const res = await client.put(`/notifications/${notificationId}/read`);
+    return res.data;
+  },
+
+  markAllNotificationsRead: async (projectId = null) => {
+    const params = {};
+    if (projectId) params.project_id = projectId;
+    const res = await client.put('/notifications/read-all', null, { params });
+    return res.data;
+  },
+
   // ── Enterprise Compliance Analytics ─────────────────────
   getProjectAnalytics: async (projectId) => {
     const res = await client.get(`/projects/${projectId}/analytics`);
