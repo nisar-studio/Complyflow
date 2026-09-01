@@ -357,6 +357,22 @@ export const api = {
     return res.data;
   },
 
+  // ── Bulk Task Operations ─────────────────────────────
+  bulkUpdateTaskStatus: async (projectId, taskIds, status) => {
+    const res = await client.post(`/projects/${projectId}/bulk/tasks/status`, {
+      task_ids: taskIds,
+      status,
+    });
+    return res.data;
+  },
+
+  bulkAssignTasks: async (projectId, taskIds, assignedTo, dueDate = null) => {
+    const payload = { task_ids: taskIds, assigned_to: assignedTo };
+    if (dueDate) payload.due_date = dueDate;
+    const res = await client.post(`/projects/${projectId}/bulk/tasks/assign`, payload);
+    return res.data;
+  },
+
   // ── Enterprise Compliance Analytics ─────────────────────
   getProjectAnalytics: async (projectId) => {
     const res = await client.get(`/projects/${projectId}/analytics`);

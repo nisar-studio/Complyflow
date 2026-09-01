@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User, Clock, Calendar } from "lucide-react";
+import { CheckCircle2, Search, Filter, RotateCcw, AlertTriangle, AlertCircle, Undo2, CheckSquare, Loader2, UserPlus, User, Clock, Calendar, Square, MinusSquare } from "lucide-react";
 import TaskUploadPanel from "./TaskUploadPanel";
 import api from "../api/client";
 
@@ -10,6 +10,8 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [assigningTaskId, setAssigningTaskId] = useState(null);
   const [editingDueDateTaskId, setEditingDueDateTaskId] = useState(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [taskError, setTaskError] = useState(null);
   const [taskSuccess, setTaskSuccess] = useState(null);
 
@@ -64,6 +66,65 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
       return due < new Date();
     } catch {
       return false;
+    }
+  };
+
+  const toggleTaskSelection = (taskId) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedTaskIds.size === filteredTasks.length) {
+      setSelectedTaskIds(new Set());
+    } else {
+      setSelectedTaskIds(new Set(filteredTasks.map(t => t.task_id)));
+    }
+  };
+
+  const handleBulkStatus = async (newStatus) => {
+    if (selectedTaskIds.size === 0) return;
+    setBulkLoading(true);
+    setTaskError(null);
+    try {
+      const ids = Array.from(selectedTaskIds);
+      await api.bulkUpdateTaskStatus(projectId, ids, newStatus);
+      ids.forEach(id => {
+        const task = tasks.find(t => t.task_id === id);
+        if (task) task.status = newStatus;
+      });
+      setSelectedTaskIds(new Set());
+      setTaskSuccess(`${ids.length} task(s) ${newStatus === "RESOLVED" ? "resolved" : "reopened"} successfully.`);
+      setTimeout(() => setTaskSuccess(null), 3000);
+    } catch (err) {
+      setTaskError(err.response?.data?.detail || err.message || "Bulk status update failed");
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkAssign = async (userId) => {
+    if (selectedTaskIds.size === 0 || !userId) return;
+    setBulkLoading(true);
+    setTaskError(null);
+    try {
+      const ids = Array.from(selectedTaskIds);
+      await api.bulkAssignTasks(projectId, ids, userId);
+      ids.forEach(id => {
+        const task = tasks.find(t => t.task_id === id);
+        if (task) task.assigned_to = userId;
+      });
+      setSelectedTaskIds(new Set());
+      setTaskSuccess(`${ids.length} task(s) assigned successfully.`);
+      setTimeout(() => setTaskSuccess(null), 3000);
+    } catch (err) {
+      setTaskError(err.response?.data?.detail || err.message || "Bulk assignment failed");
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -197,6 +258,72 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             )}
+
+            {projectId && (
+              <button
+                onClick={toggleSelectAll}
+                className={`p-1.5 transition-all ${
+                  selectedTaskIds.size === filteredTasks.length && filteredTasks.length > 0
+                    ? "text-brand-400 hover:text-brand-300"
+                    : "text-slate-400 hover:text-white"
+                }`}
+                title={selectedTaskIds.size === filteredTasks.length ? "Deselect all" : "Select all"}
+              >
+                {selectedTaskIds.size === filteredTasks.length && filteredTasks.length > 0 ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* BULK ACTION BAR */}
+      {projectId && selectedTaskIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-brand-600/10 border border-brand-600/30 text-xs font-mono">
+          <span className="text-brand-300 font-semibold">
+            {selectedTaskIds.size} task(s) selected
+          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => handleBulkStatus("RESOLVED")}
+              disabled={bulkLoading}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50"
+            >
+              {bulkLoading ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
+              Bulk Resolve
+            </button>
+            <button
+              onClick={() => handleBulkStatus("OPEN")}
+              disabled={bulkLoading}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-bold disabled:opacity-50"
+            >
+              Bulk Reopen
+            </button>
+            {members.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) handleBulkAssign(e.target.value);
+                }}
+                disabled={bulkLoading}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2.5 py-1.5 text-[11px] font-mono focus:outline-none focus:border-brand-500 disabled:opacity-50"
+              >
+                <option value="">Bulk assign to...</option>
+                {members.filter(m => m.is_active !== false).map(m => (
+                  <option key={m.user_id} value={m.user_id}>{m.name || m.email}</option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={() => setSelectedTaskIds(new Set())}
+              className="px-2 py-1.5 text-slate-400 hover:text-white"
+              title="Clear selection"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       )}
@@ -222,6 +349,22 @@ export default function RemediationList({ tasks = [], projectId, requirements = 
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 <div className="space-y-1.5 max-w-2xl">
                   <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                    {projectId && (
+                      <button
+                        onClick={() => toggleTaskSelection(task.task_id)}
+                        className={`transition-all ${
+                          selectedTaskIds.has(task.task_id)
+                            ? "text-brand-400"
+                            : "text-slate-600 hover:text-slate-400"
+                        }`}
+                      >
+                        {selectedTaskIds.has(task.task_id) ? (
+                          <CheckSquare className="w-4 h-4" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
                     {getSeverityBadge(task.severity)}
                     <span className="text-xs font-mono text-brand-400 font-semibold">
                       {task.task_id}

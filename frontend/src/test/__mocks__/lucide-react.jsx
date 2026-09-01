@@ -59,6 +59,8 @@ export const Minus = iconStub('Minus');
 export const Users = iconStub('Users');
 export const UserPlus = iconStub('UserPlus');
 export const Calendar = iconStub('Calendar');
+export const Square = iconStub('Square');
+export const MinusSquare = iconStub('MinusSquare');
 export const User = iconStub('User');
 
 export default {};

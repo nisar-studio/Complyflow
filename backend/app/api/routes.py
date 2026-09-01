@@ -1982,6 +1982,222 @@ async def update_task_due_date(
 
 
 # ──────────────────────────────────────────────────────────────────
+# Bulk Task Operations
+# ──────────────────────────────────────────────────────────────────
+
+MAX_BULK_TASKS = 50
+
+
+class BulkTaskStatusPayload(BaseModel):
+    task_ids: List[str]
+    status: str
+
+
+class BulkTaskAssignPayload(BaseModel):
+    task_ids: List[str]
+    assigned_to: str
+    due_date: Optional[str] = None
+
+
+@router.post("/projects/{project_id}/bulk/tasks/status")
+async def bulk_update_task_status(
+    project_id: str,
+    payload: BulkTaskStatusPayload,
+    ctx: Dict[str, Any] = Depends(require_permission("remediation:manage")),
+):
+    """
+    Atomically update the status of multiple remediation tasks.
+    All tasks must belong to the project. If any task ID is invalid,
+    no tasks are modified (atomic behavior).
+    Maximum batch size: 50.
+    """
+    storage = _get_storage()
+
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not payload.task_ids:
+        raise HTTPException(status_code=400, detail="task_ids cannot be empty")
+
+    if len(payload.task_ids) > MAX_BULK_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot bulk-update more than {MAX_BULK_TASKS} tasks at once",
+        )
+
+    status_upper = payload.status.strip().upper()
+    if status_upper not in VALID_TASK_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid task status '{payload.status}'. Must be one of: {', '.join(sorted(VALID_TASK_STATUSES))}",
+        )
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_ids = [tid for tid in payload.task_ids if tid not in seen and not seen.add(tid)]
+
+    # Validate ALL task IDs belong to this project (atomic check)
+    tasks = await storage.get_tasks(project_id)
+    task_map = {t.get("task_id"): t for t in tasks}
+    invalid_ids = [tid for tid in unique_ids if tid not in task_map]
+    if invalid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tasks not found in this project: {', '.join(invalid_ids[:5])}{', ...' if len(invalid_ids) > 5 else ''}",
+        )
+
+    # Apply status updates
+    updated_count = 0
+    actor = ctx.get("user", {})
+    actor_id = actor.get("user_id")
+
+    for tid in unique_ids:
+        target_task = task_map[tid]
+        old_status = target_task.get("status", "OPEN")
+        if old_status == status_upper:
+            continue  # skip unchanged
+
+        await storage.update_task_status(project_id, tid, status_upper)
+        updated_count += 1
+
+        await record_audit_event(
+            storage=storage,
+            project_id=project_id,
+            event_type="TASK_STATUS_UPDATED",
+            actor_type="AUDITOR",
+            actor_id=actor_id,
+            task_id=tid,
+            requirement_id=target_task.get("related_requirement_id"),
+            summary=f"Bulk status update: task '{tid}' changed from {old_status} to {status_upper}.",
+            metadata={
+                "task_id": tid,
+                "old_status": old_status,
+                "new_status": status_upper,
+                "task_title": target_task.get("title"),
+                "bulk_operation": True,
+            },
+        )
+
+    return {
+        "status": "success",
+        "new_status": status_upper,
+        "total_requested": len(unique_ids),
+        "total_updated": updated_count,
+        "total_unchanged": len(unique_ids) - updated_count,
+    }
+
+
+@router.post("/projects/{project_id}/bulk/tasks/assign")
+async def bulk_assign_tasks(
+    project_id: str,
+    payload: BulkTaskAssignPayload,
+    ctx: Dict[str, Any] = Depends(require_permission("remediation:manage")),
+):
+    """
+    Atomically assign multiple remediation tasks to a project member.
+    All tasks must belong to the project. Target user must be an active member.
+    If any validation fails, no tasks are modified (atomic behavior).
+    Maximum batch size: 50.
+    """
+    storage = _get_storage()
+
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not payload.task_ids:
+        raise HTTPException(status_code=400, detail="task_ids cannot be empty")
+
+    if len(payload.task_ids) > MAX_BULK_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot bulk-assign more than {MAX_BULK_TASKS} tasks at once",
+        )
+
+    # Validate target user is an active member
+    member = await storage.get_project_member(project_id, payload.assigned_to)
+    if not member:
+        raise HTTPException(
+            status_code=400,
+            detail=f"User '{payload.assigned_to}' is not a member of this project",
+        )
+    if not member.get("is_active", True):
+        raise HTTPException(
+            status_code=400,
+            detail=f"User '{payload.assigned_to}' is not an active member",
+        )
+
+    # Validate due_date if provided
+    if payload.due_date is not None:
+        try:
+            from datetime import datetime as _dt
+            _dt.fromisoformat(payload.due_date.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid due_date '{payload.due_date}'. Must be ISO-8601.",
+            )
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_ids = [tid for tid in payload.task_ids if tid not in seen and not seen.add(tid)]
+
+    # Validate ALL task IDs belong to this project (atomic check)
+    tasks = await storage.get_tasks(project_id)
+    task_map = {t.get("task_id"): t for t in tasks}
+    invalid_ids = [tid for tid in unique_ids if tid not in task_map]
+    if invalid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tasks not found in this project: {', '.join(invalid_ids[:5])}{', ...' if len(invalid_ids) > 5 else ''}",
+        )
+
+    # Apply assignments
+    assigned_count = 0
+    actor = ctx.get("user", {})
+    actor_id = actor.get("user_id")
+
+    for tid in unique_ids:
+        target_task = task_map[tid]
+        await storage.assign_task(
+            project_id=project_id,
+            task_id=tid,
+            assigned_to=payload.assigned_to,
+            assigned_by=actor_id,
+            due_date=payload.due_date,
+        )
+        assigned_count += 1
+
+        await record_audit_event(
+            storage=storage,
+            project_id=project_id,
+            event_type="TASK_ASSIGNED",
+            actor_type="AUDITOR",
+            actor_id=actor_id,
+            task_id=tid,
+            requirement_id=target_task.get("related_requirement_id"),
+            summary=f"Bulk assignment: task '{tid}' assigned to '{payload.assigned_to}'.",
+            metadata={
+                "task_id": tid,
+                "old_assignee": target_task.get("assigned_to"),
+                "new_assignee": payload.assigned_to,
+                "assigned_by": actor_id,
+                "due_date": payload.due_date,
+                "task_title": target_task.get("title"),
+                "bulk_operation": True,
+            },
+        )
+
+    return {
+        "status": "success",
+        "assigned_to": payload.assigned_to,
+        "total_requested": len(unique_ids),
+        "total_assigned": assigned_count,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────
 # Audit Activity Timeline API
 # ──────────────────────────────────────────────────────────────────
 
