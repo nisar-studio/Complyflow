@@ -8,7 +8,7 @@ Supports project-scoped analytics and cross-project portfolio views.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.services.storage import StorageInterface, get_storage
@@ -115,12 +115,18 @@ class AnalyticsService:
                 "total_projects": 0,
                 "average_score": 0.0,
                 "status_distribution": {},
+                "compliant_projects": 0,
+                "projects_needing_action": 0,
                 "total_requirements": 0,
                 "total_issues": 0,
                 "total_tasks": 0,
                 "total_verification_runs": 0,
                 "total_audit_events": 0,
                 "projects": [],
+                "overdue_tasks": {"total_overdue": 0, "by_project": []},
+                "score_trend": [],
+                "recent_activity": [],
+                "top_risks": [],
             }
 
         total_score = 0.0
@@ -177,17 +183,203 @@ class AnalyticsService:
             round(total_score / scored_count, 1) if scored_count > 0 else 0.0
         )
 
+        # ── Enhanced portfolio data ─────────────────────────
+        compliant_count = sum(
+            1 for p in project_summaries
+            if p["overall_status"] == "READY" or (p["compliance_score"] or 0) == 100
+        )
+        needs_action_count = len(project_summaries) - compliant_count
+
+        # Overdue tasks across all user projects
+        overdue_tasks = await self._compute_portfolio_overdue_tasks(
+            user_projects
+        )
+
+        # 6-month compliance score trend
+        score_trend = await self._compute_portfolio_score_trend(user_projects)
+
+        # Recent activity across all user projects
+        recent_activity = await self._compute_portfolio_recent_activity(
+            user_projects, limit=10
+        )
+
+        # Top risks (lowest-scoring projects)
+        top_risks = self._compute_portfolio_top_risks(project_summaries)
+
         return {
             "total_projects": len(user_projects),
             "average_score": average_score,
             "status_distribution": dict(status_counter),
+            "compliant_projects": compliant_count,
+            "projects_needing_action": needs_action_count,
             "total_requirements": total_requirements,
             "total_issues": total_issues,
             "total_tasks": total_tasks,
             "total_verification_runs": total_runs,
             "total_audit_events": total_events,
             "projects": project_summaries,
+            "overdue_tasks": overdue_tasks,
+            "score_trend": score_trend,
+            "recent_activity": recent_activity,
+            "top_risks": top_risks,
         }
+
+    # ── Enhanced Portfolio Methods ─────────────────────────
+
+    async def _compute_portfolio_overdue_tasks(
+        self,
+        user_projects: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Compute cross-project overdue task summary."""
+        now = datetime.now(timezone.utc)
+        overdue_by_project: List[Dict[str, Any]] = []
+        total_overdue = 0
+
+        for proj in user_projects:
+            pid = proj.get("project_id", "")
+            tasks = await self.storage.get_tasks(pid)
+            overdue_tasks = []
+            for task in tasks:
+                if task.get("status") == "RESOLVED":
+                    continue
+                due_date = task.get("due_date")
+                if not due_date:
+                    continue
+                try:
+                    due_dt = datetime.fromisoformat(due_date.replace("Z", "+00:00"))
+                    if due_dt < now:
+                        overdue_tasks.append({
+                            "task_id": task.get("task_id"),
+                            "title": task.get("title", ""),
+                            "severity": task.get("severity", "MEDIUM"),
+                            "due_date": due_date,
+                            "assigned_to": task.get("assigned_to"),
+                        })
+                except (ValueError, TypeError):
+                    pass
+
+            if overdue_tasks:
+                total_overdue += len(overdue_tasks)
+                overdue_by_project.append({
+                    "project_id": pid,
+                    "project_name": proj.get("name", "Untitled"),
+                    "overdue_count": len(overdue_tasks),
+                    "tasks": overdue_tasks,
+                })
+
+        return {
+            "total_overdue": total_overdue,
+            "by_project": overdue_by_project,
+        }
+
+    async def _compute_portfolio_score_trend(
+        self,
+        user_projects: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Compute 6-month compliance score trend across all user projects."""
+        now = datetime.now(timezone.utc)
+        six_months_ago = now - timedelta(days=180)
+
+        # Collect all verification runs from user projects
+        all_runs: List[Dict[str, Any]] = []
+        for proj in user_projects:
+            pid = proj.get("project_id", "")
+            runs = await self.storage.list_verification_runs(pid)
+            for run in runs:
+                run["_project_name"] = proj.get("name", "Untitled")
+                all_runs.append(run)
+
+        # Filter to last 6 months
+        recent_runs = []
+        for run in all_runs:
+            ts = run.get("timestamp", "")
+            try:
+                run_time = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                if run_time >= six_months_ago:
+                    recent_runs.append(run)
+            except (ValueError, TypeError):
+                pass
+
+        # Group by month and compute average score per month
+        monthly_scores: Dict[str, List[float]] = defaultdict(list)
+        for run in recent_runs:
+            ts = run.get("timestamp", "")
+            try:
+                run_time = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                month_key = run_time.strftime("%Y-%m")
+                score = float(run.get("compliance_score", 0.0))
+                monthly_scores[month_key].append(score)
+            except (ValueError, TypeError):
+                pass
+
+        # Build trend for last 6 months (fill missing months with null)
+        trend = []
+        for i in range(5, -1, -1):
+            month_date = now - timedelta(days=30 * i)
+            month_key = month_date.strftime("%Y-%m")
+            scores = monthly_scores.get(month_key, [])
+            avg_score = round(sum(scores) / len(scores), 1) if scores else None
+            trend.append({
+                "month": month_key,
+                "average_score": avg_score,
+                "project_count": len(scores),
+            })
+
+        return trend
+
+    async def _compute_portfolio_recent_activity(
+        self,
+        user_projects: List[Dict[str, Any]],
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Get the most recent audit events across all user projects."""
+        all_events: List[Dict[str, Any]] = []
+        for proj in user_projects:
+            pid = proj.get("project_id", "")
+            events = await self.storage.list_audit_events(pid, limit=5)
+            for event in events:
+                event["_project_name"] = proj.get("name", "Untitled")
+                event["_project_id"] = pid
+                all_events.append(event)
+
+        # Sort by timestamp descending and take top N
+        all_events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+        return [
+            {
+                "event_id": e.get("event_id"),
+                "project_id": e.get("_project_id"),
+                "project_name": e.get("_project_name"),
+                "event_type": e.get("event_type"),
+                "actor_type": e.get("actor_type"),
+                "severity": e.get("severity"),
+                "summary": e.get("summary"),
+                "timestamp": e.get("timestamp"),
+            }
+            for e in all_events[:limit]
+        ]
+
+    def _compute_portfolio_top_risks(
+        self,
+        project_summaries: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Identify projects with the lowest compliance scores (top risks)."""
+        scored_projects = [
+            p for p in project_summaries
+            if p.get("compliance_score") is not None
+        ]
+        # Sort by score ascending (lowest first)
+        scored_projects.sort(key=lambda p: float(p.get("compliance_score", 100)))
+        return [
+            {
+                "project_id": p["project_id"],
+                "name": p["name"],
+                "compliance_score": p["compliance_score"],
+                "overall_status": p["overall_status"],
+                "issues_count": p.get("issues_count", 0),
+                "tasks_count": p.get("tasks_count", 0),
+            }
+            for p in scored_projects[:5]
+        ]
 
     # ── Private Aggregation Methods ─────────────────────────
 

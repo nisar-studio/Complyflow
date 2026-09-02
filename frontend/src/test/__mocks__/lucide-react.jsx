@@ -64,5 +64,7 @@ export const MinusSquare = iconStub('MinusSquare');
 export const User = iconStub('User');
 export const Bell = iconStub('Bell');
 export const CheckCheck = iconStub('CheckCheck');
+export const FileCheck = iconStub('FileCheck');
+export const Activity = iconStub('Activity');
 
 export default {};
