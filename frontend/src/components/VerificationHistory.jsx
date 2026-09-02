@@ -270,6 +270,94 @@ export default function VerificationHistory({ projectId, onSelectRun }) {
           })}
         </div>
 
+        {/* Executive Summary (if present) */}
+        {selectedRun?.executive_summary && (
+          <div className="p-5 bg-slate-950/80 border border-brand-500/20 rounded-xl space-y-4">
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-800/80">
+              <Sparkles className="w-4 h-4 text-brand-400" />
+              <h4 className="text-sm font-bold text-white">Executive Summary</h4>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                AI-Generated
+              </span>
+            </div>
+
+            {/* Overall Assessment */}
+            <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800">
+              <p className="text-xs text-slate-200 leading-relaxed">
+                {selectedRun.executive_summary.overall_assessment}
+              </p>
+            </div>
+
+            {/* Strengths */}
+            {selectedRun.executive_summary.strengths?.length > 0 && (
+              <div>
+                <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold tracking-wider block mb-2">
+                  Strengths
+                </span>
+                <div className="space-y-1">
+                  {selectedRun.executive_summary.strengths.map((s, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                      <span>{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Key Risks */}
+            {selectedRun.executive_summary.key_risks?.length > 0 && (
+              <div>
+                <span className="text-[10px] font-mono text-red-400 uppercase font-bold tracking-wider block mb-2">
+                  Key Risks
+                </span>
+                <div className="space-y-1">
+                  {selectedRun.executive_summary.key_risks.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                      <span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Priority Actions */}
+            {selectedRun.executive_summary.priority_actions?.length > 0 && (
+              <div>
+                <span className="text-[10px] font-mono text-amber-400 uppercase font-bold tracking-wider block mb-2">
+                  Priority Actions
+                </span>
+                <div className="space-y-1">
+                  {selectedRun.executive_summary.priority_actions.map((a, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                      <ArrowRight className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                      <span>{a}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Notable Findings */}
+            {selectedRun.executive_summary.notable_findings?.length > 0 && (
+              <div>
+                <span className="text-[10px] font-mono text-slate-400 uppercase font-bold tracking-wider block mb-2">
+                  Notable Findings
+                </span>
+                <div className="space-y-1">
+                  {selectedRun.executive_summary.notable_findings.map((f, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-slate-400">
+                      <span className="text-slate-500 mt-0.5">•</span>
+                      <span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Selected Snapshot Export & Audit Action Panel */}
         {selectedRun && (
           <div className="p-5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-4">

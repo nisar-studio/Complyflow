@@ -14,14 +14,18 @@ Provides:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 
 from app.agent.agent import _sanitize_error, run_compliance_analysis, run_verification
+from app.services.summary_service import generate_executive_summary
 from app.api._shared import _emit_factory, _get_storage
 from app.services.auth_service import (
     get_project_member_context,
@@ -197,6 +201,20 @@ async def _run_analysis_task(
         fw_name = proj_meta.get("active_framework_name") or (reqs[0].get("framework_name") if reqs else "Built-in Framework")
         fw_ver = proj_meta.get("active_framework_version") or (reqs[0].get("framework_version") if reqs else "1.0")
 
+        # Generate executive summary BEFORE snapshot finalization
+        executive_summary = None
+        try:
+            proj_obj_for_name = await storage.get_project(project_id)
+            proj_name = (proj_obj_for_name or {}).get("name", project_id)
+            executive_summary = generate_executive_summary(
+                verification_result=results,
+                project_name=proj_name,
+            )
+        except Exception as summary_err:
+            safe_summary_err = _sanitize_error(str(summary_err))
+            logger.warning(f"Executive summary generation failed for {project_id}: {safe_summary_err}")
+            executive_summary = None
+
         # Save immutable Run 1 Snapshot
         initial_snapshot = {
             "trigger": "INITIAL_ANALYSIS",
@@ -215,6 +233,7 @@ async def _run_analysis_task(
             "resolved_gaps": [],
             "remaining_gaps": [g.get("gap_id") for g in gaps if g.get("gap_id")],
             "summary": f"Initial compliance analysis completed. Score: {score}% with {len(gaps)} gap(s) identified.",
+            "executive_summary": executive_summary,
         }
         await storage.save_verification_run(project_id, initial_snapshot)
 
@@ -229,6 +248,19 @@ async def _run_analysis_task(
             metadata={"compliance_score": score, "overall_status": status, "run_id": "run_1"},
             emit_event=emit_event,
         )
+
+        # Record executive summary generation audit event
+        if executive_summary is not None:
+            await record_audit_event(
+                storage=storage,
+                project_id=project_id,
+                event_type="SUMMARY_GENERATED",
+                actor_type="AI_AGENT",
+                run_id="run_1",
+                summary="Executive summary generated for initial analysis.",
+                metadata={"run_id": "run_1", "has_summary": True},
+                emit_event=emit_event,
+            )
 
     except Exception as e:
         safe_msg = _sanitize_error(str(e))
@@ -329,6 +361,19 @@ async def _run_verification_task(
         fw_name = proj_meta.get("active_framework_name") or (requirements[0].get("framework_name") if requirements else "Built-in Framework")
         fw_ver = proj_meta.get("active_framework_version") or (requirements[0].get("framework_version") if requirements else "1.0")
 
+        # Generate executive summary BEFORE snapshot finalization
+        executive_summary = None
+        try:
+            proj_name = (await storage.get_project(project_id) or {}).get("name", project_id)
+            executive_summary = generate_executive_summary(
+                verification_result=result,
+                project_name=proj_name,
+            )
+        except Exception as summary_err:
+            safe_summary_err = _sanitize_error(str(summary_err))
+            logger.warning(f"Executive summary generation failed for {project_id}: {safe_summary_err}")
+            executive_summary = None
+
         verification_snapshot = {
             "trigger": "REMEDIATION_VERIFICATION",
             "framework_id": fw_id,
@@ -346,6 +391,7 @@ async def _run_verification_task(
             "resolved_gaps": result.get("resolved_gaps", []),
             "remaining_gaps": remaining_gap_ids,
             "summary": result.get("summary", "Verification audit completed."),
+            "executive_summary": executive_summary,
         }
 
         run_id = await storage.save_verification_run(project_id, verification_snapshot)
@@ -371,6 +417,19 @@ async def _run_verification_task(
             metadata={"compliance_score": score, "overall_status": status, "run_id": run_id},
             emit_event=emit_event,
         )
+
+        # Record executive summary generation audit event
+        if executive_summary is not None:
+            await record_audit_event(
+                storage=storage,
+                project_id=project_id,
+                event_type="SUMMARY_GENERATED",
+                actor_type="AI_AGENT",
+                run_id=run_id,
+                summary=f"Executive summary generated for verification run {run_id}.",
+                metadata={"run_id": run_id, "has_summary": True},
+                emit_event=emit_event,
+            )
 
         # Generate notifications for all project members
         members = await storage.list_project_members(project_id)
