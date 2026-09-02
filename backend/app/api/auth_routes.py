@@ -45,6 +45,7 @@ from app.services.auth_service import (
     verify_password,
 )
 from app.services.audit_service import record_audit_event
+from app.services.rate_limiter import get_login_rate_limiter
 from app.services.storage import get_storage
 
 auth_router = APIRouter(prefix="/api")
@@ -156,14 +157,29 @@ async def register(payload: RegisterRequest):
 # ─────────────────────────────────────────────────────────────
 
 @auth_router.post("/auth/login")
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest, request: Request):
     """
     Log in with email and password.
     Sets an HTTP-only session cookie and client-readable CSRF cookie.
+
+    Rate-limited: max 5 failed attempts per client IP per 15-minute window.
     """
     storage = get_storage()
     email = payload.email.strip().lower()
     password = payload.password
+
+    # ── Rate Limiting ────────────────────────────────────────
+    # Use request.client.host directly — no X-Forwarded-For trust.
+    # ComplyFlow has no reverse proxy in its Docker deployment;
+    # trusting forwarded headers would create an IP-spoofing bypass.
+    client_ip = request.client.host if request.client else "unknown"
+    limiter = get_login_rate_limiter()
+
+    if not await limiter.is_allowed(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please try again later.",
+        )
 
     # Generic error — do not reveal whether email exists
     _CRED_ERROR = HTTPException(
@@ -175,13 +191,18 @@ async def login(payload: LoginRequest):
     if not user:
         # Constant-time resistance to timing side-channels
         hash_password("dummy-timing-resistance")
+        await limiter.record_failure(client_ip)
         raise _CRED_ERROR
 
     if not verify_password(password, user.get("password_hash", "")):
+        await limiter.record_failure(client_ip)
         raise _CRED_ERROR
 
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="This account is deactivated.")
+
+    # Successful login — clear the rate-limit counter for this IP
+    limiter.record_success(client_ip)
 
     token, session_id, csrf_token = await create_authenticated_session(
         user_id=user["user_id"],

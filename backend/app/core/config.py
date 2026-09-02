@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # ── Frontend Base URL ────────────────────────────────────
     vite_api_base_url: str = Field(default="http://localhost:8000", description="Frontend API Base URL")
 
+    # ── Login Rate Limiting ─────────────────────────────────
+    login_rate_limit_max_attempts: int = Field(default=5, description="Max failed login attempts per IP within the rate-limit window")
+    login_rate_limit_window_seconds: int = Field(default=900, description="Rate-limit window in seconds (default 15 minutes)")
+
 
 
     def is_production(self) -> bool:
