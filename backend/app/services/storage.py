@@ -78,6 +78,33 @@ class StorageInterface(ABC):
         """Delete a document record for a project."""
         pass
 
+    # ── Document Versions (Immutable Historical Records) ─────
+
+    @abstractmethod
+    async def create_document_version(self, project_id: str, doc_id: str, version_data: Dict[str, Any]) -> str:
+        """Create an immutable historical document version. Returns version_id."""
+        pass
+
+    @abstractmethod
+    async def get_document_version(self, project_id: str, doc_id: str, version_number: int) -> Optional[Dict[str, Any]]:
+        """Get a specific document version by version number."""
+        pass
+
+    @abstractmethod
+    async def get_latest_document_version(self, project_id: str, doc_id: str) -> Optional[Dict[str, Any]]:
+        """Get the latest version of a document."""
+        pass
+
+    @abstractmethod
+    async def list_document_versions(self, project_id: str, doc_id: str) -> List[Dict[str, Any]]:
+        """List all versions of a document in chronological order."""
+        pass
+
+    @abstractmethod
+    async def get_next_version_number(self, project_id: str, doc_id: str) -> int:
+        """Get the next version number for a document."""
+        pass
+
     @abstractmethod
     async def create_framework(self, framework_data: Dict[str, Any], requirements: List[Dict[str, Any]]) -> str:
         """Create a versioned framework with its requirement definitions."""
@@ -776,6 +803,27 @@ class SQLiteStorageService(StorageInterface):
             """)
             await db.execute("CREATE INDEX IF NOT EXISTS idx_fw_reqs_id ON framework_requirements (framework_id, requirement_id);")
 
+            # ── 17. Document Versions (Immutable Historical Records) ──
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS document_versions (
+                    version_id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    doc_id TEXT NOT NULL,
+                    version_number INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    text TEXT,
+                    data_json TEXT,
+                    file_path TEXT,
+                    file_hash TEXT,
+                    uploaded_by TEXT,
+                    uploaded_at TEXT NOT NULL,
+                    UNIQUE(project_id, doc_id, version_number)
+                );
+            """)
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_dv_proj_doc ON document_versions (project_id, doc_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_dv_proj_doc_ver ON document_versions (project_id, doc_id, version_number)")
+
             # Seed default demo user for local-first testing / development only
             app_env = os.environ.get("APP_ENV", "development").lower()
             if app_env != "production":
@@ -932,6 +980,7 @@ class SQLiteStorageService(StorageInterface):
 
             tables = [
                 "projects", "project_members", "requirements", "documents",
+                "document_versions",
                 "matches", "issues", "tasks", "agent_events",
                 "remediation_uploads", "verification_runs",
                 "auditor_overrides", "auditor_notes", "audit_events",
@@ -1044,8 +1093,178 @@ class SQLiteStorageService(StorageInterface):
                 "DELETE FROM documents WHERE project_id = ? AND (doc_id = ? OR name = ?)",
                 (project_id, doc_id, doc_id),
             )
+            # Also delete version records
+            await db.execute(
+                "DELETE FROM document_versions WHERE project_id = ? AND doc_id = ?",
+                (project_id, doc_id),
+            )
             await db.commit()
             return res.rowcount > 0
+
+    # ── Document Versions (Immutable Historical Records) ─────
+
+    async def create_document_version(self, project_id: str, doc_id: str, version_data: Dict[str, Any]) -> str:
+        await self._init_db()
+        version_id = version_data.get("version_id") or f"{project_id}_{doc_id}_v{version_data.get('version_number', 1)}"
+        now = datetime.now(timezone.utc).isoformat()
+        async with self._connect() as db:
+            await db.execute(
+                """
+                INSERT INTO document_versions (
+                    version_id, project_id, doc_id, version_number, name, role,
+                    text, data_json, file_path, file_hash, uploaded_by, uploaded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    project_id,
+                    doc_id,
+                    version_data.get("version_number", 1),
+                    version_data.get("name", ""),
+                    version_data.get("role", "evidence"),
+                    version_data.get("text", ""),
+                    json.dumps(version_data.get("data_json", {})) if isinstance(version_data.get("data_json"), dict) else version_data.get("data_json"),
+                    version_data.get("file_path", ""),
+                    version_data.get("file_hash", ""),
+                    version_data.get("uploaded_by", ""),
+                    version_data.get("uploaded_at", now),
+                ),
+            )
+            await db.commit()
+        return version_id
+
+    async def get_document_version(self, project_id: str, doc_id: str, version_number: int) -> Optional[Dict[str, Any]]:
+        await self._init_db()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM document_versions WHERE project_id = ? AND doc_id = ? AND version_number = ?",
+                (project_id, doc_id, version_number),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return None
+                data = dict(row)
+                if data.get("data_json"):
+                    try:
+                        data["data_json"] = json.loads(data["data_json"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                return data
+
+    async def get_latest_document_version(self, project_id: str, doc_id: str) -> Optional[Dict[str, Any]]:
+        await self._init_db()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM document_versions WHERE project_id = ? AND doc_id = ? ORDER BY version_number DESC LIMIT 1",
+                (project_id, doc_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return None
+                data = dict(row)
+                if data.get("data_json"):
+                    try:
+                        data["data_json"] = json.loads(data["data_json"])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                return data
+
+    async def list_document_versions(self, project_id: str, doc_id: str) -> List[Dict[str, Any]]:
+        await self._init_db()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM document_versions WHERE project_id = ? AND doc_id = ? ORDER BY version_number ASC",
+                (project_id, doc_id),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                results = []
+                for row in rows:
+                    data = dict(row)
+                    if data.get("data_json"):
+                        try:
+                            data["data_json"] = json.loads(data["data_json"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    results.append(data)
+                return results
+
+    async def get_next_version_number(self, project_id: str, doc_id: str) -> int:
+        await self._init_db()
+        async with self._connect() as db:
+            async with db.execute(
+                "SELECT MAX(version_number) as max_ver FROM document_versions WHERE project_id = ? AND doc_id = ?",
+                (project_id, doc_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row and row[0] is not None:
+                    return row[0] + 1
+                return 1
+
+    async def save_document_with_version(self, project_id: str, doc_id: str, analysis: Dict[str, Any], version_data: Dict[str, Any]) -> None:
+        """Atomically update documents table and create version record.
+        
+        Both operations happen in a single transaction. If either fails,
+        neither persists, maintaining the invariant:
+        - documents always points to a valid version
+        - every version record has a corresponding documents entry
+        """
+        await self._init_db()
+        name = analysis.get("name", doc_id)
+        role = analysis.get("role", "evidence")
+        text = analysis.get("text", "")
+        version_number = version_data.get("version_number", 1)
+        version_id = version_data.get("version_id") or f"{project_id}_{doc_id}_v{version_number}"
+        now = datetime.now(timezone.utc).isoformat()
+        
+        async with self._connect() as db:
+            try:
+                # 1. Update documents table (current version)
+                await db.execute(
+                    """
+                    INSERT INTO documents (project_id, doc_id, name, role, text, data_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(project_id, doc_id) DO UPDATE SET
+                        name = excluded.name,
+                        role = excluded.role,
+                        text = excluded.text,
+                        data_json = excluded.data_json
+                    """,
+                    (project_id, doc_id, name, role, text, json.dumps(analysis)),
+                )
+                
+                # 2. Create version record
+                await db.execute(
+                    """
+                    INSERT INTO document_versions (
+                        version_id, project_id, doc_id, version_number, name, role,
+                        text, data_json, file_path, file_hash, uploaded_by, uploaded_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        version_id,
+                        project_id,
+                        doc_id,
+                        version_number,
+                        version_data.get("name", ""),
+                        version_data.get("role", "evidence"),
+                        version_data.get("text", ""),
+                        json.dumps(version_data.get("data_json", {})) if isinstance(version_data.get("data_json"), dict) else version_data.get("data_json"),
+                        version_data.get("file_path", ""),
+                        version_data.get("file_hash", ""),
+                        version_data.get("uploaded_by", ""),
+                        version_data.get("uploaded_at", now),
+                    ),
+                )
+                
+                # 3. Commit both operations atomically
+                await db.commit()
+            except Exception:
+                # If either operation fails, rollback both
+                await db.rollback()
+                raise
 
     # ── Matches ──────────────────────────────────────────────
 

@@ -337,6 +337,17 @@ export const api = {
     return res.data;
   },
 
+  // ── Document Versioning ──────────────────────────────
+  getDocumentVersions: async (projectId, docId) => {
+    const res = await client.get(`/projects/${projectId}/documents/${encodeURIComponent(docId)}/versions`);
+    return res.data.versions;
+  },
+
+  getDocumentVersion: async (projectId, docId, versionNumber) => {
+    const res = await client.get(`/projects/${projectId}/documents/${encodeURIComponent(docId)}/versions/${versionNumber}`);
+    return res.data.version;
+  },
+
   // ── Remediation Task Status ────────────────────────────
   updateTaskStatus: async (projectId, taskId, status) => {
     const res = await client.put(`/projects/${projectId}/tasks/${taskId}/status`, { status });

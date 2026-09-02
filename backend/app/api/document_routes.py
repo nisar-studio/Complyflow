@@ -9,6 +9,7 @@ Provides:
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -57,31 +58,86 @@ async def upload_documents(
         chunked = _document_service.extract_chunked_document(
             requirements_file.filename, content, "requirements_doc"
         )
-        _document_service.save_upload(requirements_file.filename, content, project_id)
         now_ts = datetime.now(timezone.utc).isoformat()
-        await storage.save_document_analysis(project_id, "requirements_doc", {
-            "doc_id": "requirements_doc",
-            "name": requirements_file.filename,
-            "role": "requirements",
-            "text": chunked.raw_text,
-            "status": chunked.status,
-            "diagnostics": chunked.diagnostics,
-            "total_pages": chunked.total_pages,
-            "total_chunks": chunked.total_chunks,
-            "total_characters": chunked.total_characters,
-            "file_size": len(content),
-            "file_type": Path(requirements_file.filename).suffix.lower(),
-            "chunks": [c.model_dump() for c in chunked.chunks],
-            "uploaded_at": now_ts,
-        })
-        saved_docs.append({
-            "doc_id": "requirements_doc",
-            "name": requirements_file.filename,
-            "role": "requirements",
-            "status": chunked.status,
-            "total_pages": chunked.total_pages,
-            "total_chunks": chunked.total_chunks,
-        })
+        file_hash = hashlib.sha256(content).hexdigest()
+
+        # Check for duplicate upload
+        existing_doc = await storage.get_document(project_id, "requirements_doc")
+        if existing_doc and existing_doc.get("file_hash") == file_hash:
+            saved_docs.append({
+                "doc_id": "requirements_doc",
+                "name": requirements_file.filename,
+                "role": "requirements",
+                "status": chunked.status,
+                "total_pages": chunked.total_pages,
+                "total_chunks": chunked.total_chunks,
+                "version_number": existing_doc.get("version_number", 1),
+                "duplicate": True,
+            })
+        else:
+            # Determine version number
+            version_number = await storage.get_next_version_number(project_id, "requirements_doc")
+            
+            # Save file with version-aware path
+            file_path = _document_service.save_upload(
+                requirements_file.filename, content, project_id,
+                doc_id="requirements_doc", version_number=version_number
+            )
+            
+            try:
+                analysis_data = {
+                    "doc_id": "requirements_doc",
+                    "name": requirements_file.filename,
+                    "role": "requirements",
+                    "text": chunked.raw_text,
+                    "status": chunked.status,
+                    "diagnostics": chunked.diagnostics,
+                    "total_pages": chunked.total_pages,
+                    "total_chunks": chunked.total_chunks,
+                    "total_characters": chunked.total_characters,
+                    "file_size": len(content),
+                    "file_type": Path(requirements_file.filename).suffix.lower(),
+                    "chunks": [c.model_dump() for c in chunked.chunks],
+                    "uploaded_at": now_ts,
+                    "file_hash": file_hash,
+                    "version_number": version_number,
+                }
+
+                # Atomically update documents + create version record
+                await storage.save_document_with_version(
+                    project_id, "requirements_doc",
+                    analysis_data,
+                    {
+                        "version_number": version_number,
+                        "name": requirements_file.filename,
+                        "role": "requirements",
+                        "text": chunked.raw_text,
+                        "data_json": analysis_data,
+                        "file_path": str(file_path),
+                        "file_hash": file_hash,
+                        "uploaded_by": ctx.get("user", {}).get("user_id", ""),
+                        "uploaded_at": now_ts,
+                    },
+                )
+            except Exception:
+                # If DB operations fail, clean up the newly created file
+                # but do NOT delete historical version files
+                try:
+                    if file_path.exists():
+                        file_path.unlink()
+                except OSError:
+                    pass
+                raise
+
+            saved_docs.append({
+                "doc_id": "requirements_doc",
+                "name": requirements_file.filename,
+                "role": "requirements",
+                "status": chunked.status,
+                "total_pages": chunked.total_pages,
+                "total_chunks": chunked.total_chunks,
+                "version_number": version_number,
+            })
 
         await record_audit_event(
             storage=storage,
@@ -90,7 +146,7 @@ async def upload_documents(
             actor_type="AUDITOR",
             document_id="requirements_doc",
             summary=f"Requirements checklist '{requirements_file.filename}' uploaded.",
-            metadata={"filename": requirements_file.filename, "role": "requirements", "size": len(content)},
+            metadata={"filename": requirements_file.filename, "role": "requirements", "size": len(content), "version_number": version_number if not existing_doc or existing_doc.get("file_hash") != file_hash else existing_doc.get("version_number", 1)},
         )
 
     # Save evidence files
@@ -106,31 +162,86 @@ async def upload_documents(
             chunked = _document_service.extract_chunked_document(
                 ef.filename, content, doc_id
             )
-            _document_service.save_upload(ef.filename, content, project_id)
             now_ts = datetime.now(timezone.utc).isoformat()
-            await storage.save_document_analysis(project_id, doc_id, {
-                "doc_id": doc_id,
-                "name": ef.filename,
-                "role": "evidence",
-                "text": chunked.raw_text,
-                "status": chunked.status,
-                "diagnostics": chunked.diagnostics,
-                "total_pages": chunked.total_pages,
-                "total_chunks": chunked.total_chunks,
-                "total_characters": chunked.total_characters,
-                "file_size": len(content),
-                "file_type": Path(ef.filename).suffix.lower(),
-                "chunks": [c.model_dump() for c in chunked.chunks],
-                "uploaded_at": now_ts,
-            })
-            saved_docs.append({
-                "doc_id": doc_id,
-                "name": ef.filename,
-                "role": "evidence",
-                "status": chunked.status,
-                "total_pages": chunked.total_pages,
-                "total_chunks": chunked.total_chunks,
-            })
+            file_hash = hashlib.sha256(content).hexdigest()
+
+            # Check for duplicate upload
+            existing_doc = await storage.get_document(project_id, doc_id)
+            if existing_doc and existing_doc.get("file_hash") == file_hash:
+                saved_docs.append({
+                    "doc_id": doc_id,
+                    "name": ef.filename,
+                    "role": "evidence",
+                    "status": chunked.status,
+                    "total_pages": chunked.total_pages,
+                    "total_chunks": chunked.total_chunks,
+                    "version_number": existing_doc.get("version_number", 1),
+                    "duplicate": True,
+                })
+            else:
+                # Determine version number
+                version_number = await storage.get_next_version_number(project_id, doc_id)
+                
+                # Save file with version-aware path
+                file_path = _document_service.save_upload(
+                    ef.filename, content, project_id,
+                    doc_id=doc_id, version_number=version_number
+                )
+                
+                try:
+                    analysis_data = {
+                        "doc_id": doc_id,
+                        "name": ef.filename,
+                        "role": "evidence",
+                        "text": chunked.raw_text,
+                        "status": chunked.status,
+                        "diagnostics": chunked.diagnostics,
+                        "total_pages": chunked.total_pages,
+                        "total_chunks": chunked.total_chunks,
+                        "total_characters": chunked.total_characters,
+                        "file_size": len(content),
+                        "file_type": Path(ef.filename).suffix.lower(),
+                        "chunks": [c.model_dump() for c in chunked.chunks],
+                        "uploaded_at": now_ts,
+                        "file_hash": file_hash,
+                        "version_number": version_number,
+                    }
+
+                    # Atomically update documents + create version record
+                    await storage.save_document_with_version(
+                        project_id, doc_id,
+                        analysis_data,
+                        {
+                            "version_number": version_number,
+                            "name": ef.filename,
+                            "role": "evidence",
+                            "text": chunked.raw_text,
+                            "data_json": analysis_data,
+                            "file_path": str(file_path),
+                            "file_hash": file_hash,
+                            "uploaded_by": ctx.get("user", {}).get("user_id", ""),
+                            "uploaded_at": now_ts,
+                        },
+                    )
+                except Exception:
+                    # If DB operations fail, clean up the newly created file
+                    # but do NOT delete historical version files
+                    try:
+                        if file_path.exists():
+                            file_path.unlink()
+                    except OSError:
+                        pass
+                    raise
+
+                saved_docs.append({
+                    "doc_id": doc_id,
+                    "name": ef.filename,
+                    "role": "evidence",
+                    "status": chunked.status,
+                    "total_pages": chunked.total_pages,
+                    "total_chunks": chunked.total_chunks,
+                    "version_number": version_number,
+                })
 
             await record_audit_event(
                 storage=storage,
@@ -139,7 +250,7 @@ async def upload_documents(
                 actor_type="AUDITOR",
                 document_id=doc_id,
                 summary=f"Evidence document '{ef.filename}' uploaded.",
-                metadata={"filename": ef.filename, "role": "evidence", "size": len(content)},
+                metadata={"filename": ef.filename, "role": "evidence", "size": len(content), "version_number": version_number if not existing_doc or existing_doc.get("file_hash") != file_hash else existing_doc.get("version_number", 1)},
             )
 
     return {"saved": saved_docs, "project_id": project_id}
@@ -326,15 +437,25 @@ async def bulk_delete_documents(
 
             doc_name = doc.get("name", doc_id)
 
-            # Delete physical file safely
-            file_path = Path(settings.upload_dir) / project_id / doc_name
-            if file_path.exists() and file_path.is_file():
+            # Delete physical file(s) safely - handle both legacy and versioned paths
+            # Legacy path: uploads/{project_id}/{filename}
+            legacy_path = Path(settings.upload_dir) / project_id / doc_name
+            if legacy_path.exists() and legacy_path.is_file():
                 try:
-                    file_path.unlink()
+                    legacy_path.unlink()
                 except OSError:
-                    pass  # Proceed with DB deletion even if file removal fails
+                    pass
+            
+            # Versioned path: uploads/{project_id}/{doc_id}/ (contains v1/, v2/, etc.)
+            versioned_dir = Path(settings.upload_dir) / project_id / doc_id
+            if versioned_dir.exists() and versioned_dir.is_dir():
+                try:
+                    import shutil
+                    shutil.rmtree(versioned_dir)
+                except OSError:
+                    pass
 
-            # Delete from database
+            # Delete from database (also removes version records)
             deleted = await storage.delete_document(project_id, doc_id)
 
             await record_audit_event(
@@ -362,3 +483,50 @@ async def bulk_delete_documents(
         "total_succeeded": len(results_success),
         "total_failed": len(results_failed),
     }
+
+
+# ── Document Versioning ──────────────────────────────────────────
+
+
+@router.get("/projects/{project_id}/documents/{doc_id}/versions")
+async def list_document_versions(
+    project_id: str,
+    doc_id: str,
+    ctx: Dict[str, Any] = Depends(get_project_member_context),
+):
+    """List all versions of a document."""
+    storage = _get_storage()
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    safe_doc_id = Path(doc_id).name.replace("..", "").replace("/", "").replace("\\", "")
+    if not safe_doc_id:
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+
+    versions = await storage.list_document_versions(project_id, safe_doc_id)
+    return {"versions": versions, "doc_id": safe_doc_id}
+
+
+@router.get("/projects/{project_id}/documents/{doc_id}/versions/{version_number}")
+async def get_document_version(
+    project_id: str,
+    doc_id: str,
+    version_number: int,
+    ctx: Dict[str, Any] = Depends(get_project_member_context),
+):
+    """Get a specific document version."""
+    storage = _get_storage()
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    safe_doc_id = Path(doc_id).name.replace("..", "").replace("/", "").replace("\\", "")
+    if not safe_doc_id:
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+
+    version = await storage.get_document_version(project_id, safe_doc_id, version_number)
+    if not version:
+        raise HTTPException(status_code=404, detail=f"Version {version_number} not found for document '{safe_doc_id}'")
+
+    return {"version": version}

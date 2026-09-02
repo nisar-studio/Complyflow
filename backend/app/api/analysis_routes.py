@@ -129,7 +129,20 @@ async def _run_analysis_task(
         matches = results.get("matches", [])
         gaps = results.get("gaps", [])
         tasks = results.get("tasks", [])
-        doc_names = [d.get("name", "unknown") for d in evidence_docs]
+        
+        # Build document references with version provenance
+        doc_names = []
+        doc_versions = []
+        for d in evidence_docs:
+            doc_name = d.get("name", "unknown")
+            doc_id = d.get("doc_id", doc_name.split(".")[0] if "." in doc_name else doc_name)
+            doc_ver = d.get("version_number", 1)
+            doc_names.append(doc_name)
+            doc_versions.append({
+                "document_name": doc_name,
+                "document_id": doc_id,
+                "version_number": doc_ver,
+            })
 
         await storage.save_requirements(project_id, reqs)
         await storage.save_matches(project_id, matches)
@@ -230,6 +243,7 @@ async def _run_analysis_task(
             "issues_snapshot": gaps,
             "tasks_snapshot": tasks,
             "documents_used": doc_names,
+            "document_versions": doc_versions,
             "resolved_gaps": [],
             "remaining_gaps": [g.get("gap_id") for g in gaps if g.get("gap_id")],
             "summary": f"Initial compliance analysis completed. Score: {score}% with {len(gaps)} gap(s) identified.",
@@ -347,7 +361,20 @@ async def _run_verification_task(
         all_gaps = await storage.get_issues(project_id)
         open_gaps = [g for g in all_gaps if g.get("gap_id") in remaining_gap_ids]
         tasks = await storage.get_tasks(project_id)
-        doc_names = [d.get("name", "unknown") for d in all_documents]
+        
+        # Build document references with version provenance
+        doc_names = []
+        doc_versions = []
+        for d in all_documents:
+            doc_name = d.get("name", "unknown")
+            doc_id = d.get("doc_id", doc_name.split(".")[0] if "." in doc_name else doc_name)
+            doc_ver = d.get("version_number", 1)
+            doc_names.append(doc_name)
+            doc_versions.append({
+                "document_name": doc_name,
+                "document_id": doc_id,
+                "version_number": doc_ver,
+            })
         # Extract framework metadata from project
         proj_obj = await storage.get_project(project_id)
         proj_meta = {}
@@ -388,6 +415,7 @@ async def _run_verification_task(
             "issues_snapshot": open_gaps,
             "tasks_snapshot": tasks,
             "documents_used": doc_names,
+            "document_versions": doc_versions,
             "resolved_gaps": result.get("resolved_gaps", []),
             "remaining_gaps": remaining_gap_ids,
             "summary": result.get("summary", "Verification audit completed."),

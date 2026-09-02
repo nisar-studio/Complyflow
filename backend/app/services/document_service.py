@@ -27,12 +27,28 @@ class DocumentService:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.chunker = get_chunking_service()
 
-    def save_upload(self, filename: str, content: bytes, project_id: str) -> Path:
-        """Save an uploaded file to disk under uploads/{project_id}/."""
-        project_dir = Path(self.upload_dir) / project_id
-        project_dir.mkdir(parents=True, exist_ok=True)
+    def save_upload(self, filename: str, content: bytes, project_id: str, doc_id: str = None, version_number: int = None) -> Path:
+        """Save an uploaded file to disk.
+        
+        If doc_id and version_number are provided, uses version-aware path:
+            uploads/{project_id}/{doc_id}/v{version_number}/{sanitized_filename}
+        
+        Otherwise, uses legacy flat path:
+            uploads/{project_id}/{sanitized_filename}
+        """
         safe_name = sanitize_filename(filename or "document")
-        file_path = project_dir / safe_name
+        
+        if doc_id and version_number is not None:
+            # Version-aware path: uploads/{project_id}/{doc_id}/v{version}/{filename}
+            version_dir = Path(self.upload_dir) / project_id / doc_id / f"v{version_number}"
+            version_dir.mkdir(parents=True, exist_ok=True)
+            file_path = version_dir / safe_name
+        else:
+            # Legacy flat path: uploads/{project_id}/{filename}
+            project_dir = Path(self.upload_dir) / project_id
+            project_dir.mkdir(parents=True, exist_ok=True)
+            file_path = project_dir / safe_name
+        
         file_path.write_bytes(content)
         return file_path
 

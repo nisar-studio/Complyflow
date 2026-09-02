@@ -34,6 +34,11 @@ export default function DocumentViewer({
   const [deletingDocs, setDeletingDocs] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Version state
+  const [versions, setVersions] = useState([]);
+  const [selectedVersion, setSelectedVersion] = useState(null);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+
   // Load document library
   const loadLibrary = async () => {
     try {
@@ -67,6 +72,8 @@ export default function DocumentViewer({
   useEffect(() => {
     if (!selectedDocId) {
       setActiveDoc(null);
+      setVersions([]);
+      setSelectedVersion(null);
       return;
     }
 
@@ -79,6 +86,19 @@ export default function DocumentViewer({
           setActivePage(highlightPage);
         } else {
           setActivePage(1);
+        }
+        // Load version history
+        try {
+          setLoadingVersions(true);
+          const vers = await api.getDocumentVersions(projectId, selectedDocId);
+          setVersions(vers || []);
+          if (vers && vers.length > 0) {
+            setSelectedVersion(vers[vers.length - 1]); // Latest version
+          }
+        } catch {
+          setVersions([]);
+        } finally {
+          setLoadingVersions(false);
         }
       } catch (err) {
         console.error('Failed to load document detail:', err);
@@ -366,6 +386,11 @@ export default function DocumentViewer({
                         <h4 className="text-xs font-bold text-white truncate max-w-[180px]">
                           {doc.name}
                         </h4>
+                        {doc.version_number && doc.version_number > 1 && (
+                          <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-mono bg-brand-500/10 text-brand-400 border border-brand-500/20 mt-1">
+                            v{doc.version_number}
+                          </span>
+                        )}
                         <div className="flex items-center space-x-2 text-[10px] font-mono text-slate-400 mt-1">
                           <span className={`px-1.5 py-0.2 rounded uppercase ${
                             isReq ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'bg-slate-800 text-slate-300'
@@ -408,6 +433,55 @@ export default function DocumentViewer({
             </div>
           ) : activeDoc ? (
             <>
+              {/* VERSION HISTORY PANEL */}
+              {versions.length > 0 && (
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-slate-400 uppercase font-bold tracking-wider">
+                      Version History ({versions.length} version{versions.length !== 1 ? 's' : ''})
+                    </span>
+                    {selectedVersion && (
+                      <span className="text-[10px] font-mono text-brand-400">
+                        Viewing v{selectedVersion.version_number}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {versions.map((v) => (
+                      <button
+                        key={v.version_id}
+                        onClick={async () => {
+                          try {
+                            const versionDetail = await api.getDocumentVersion(projectId, selectedDocId, v.version_number);
+                            setSelectedVersion(versionDetail);
+                            if (versionDetail.data_json) {
+                              setActiveDoc({
+                                ...activeDoc,
+                                ...versionDetail.data_json,
+                                name: versionDetail.name,
+                                version_number: versionDetail.version_number,
+                              });
+                            }
+                          } catch {
+                            // Silently handle version load failure
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all cursor-pointer ${
+                          selectedVersion?.version_number === v.version_number
+                            ? 'bg-brand-600 text-white border border-brand-500'
+                            : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        v{v.version_number}
+                        <span className="ml-1 text-[9px] opacity-70">
+                          {new Date(v.uploaded_at).toLocaleDateString()}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Document Overview Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
                 <div>
