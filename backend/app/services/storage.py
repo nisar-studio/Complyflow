@@ -921,14 +921,25 @@ class SQLiteStorageService(StorageInterface):
     async def delete_project(self, project_id: str) -> bool:
         await self._init_db()
         async with self._connect() as db:
+            # Get the set of existing tables so we only attempt to delete from
+            # tables that actually exist (handles pre-migration databases).
+            existing_tables = set()
+            async with db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ) as cursor:
+                async for row in cursor:
+                    existing_tables.add(row[0])
+
             tables = [
                 "projects", "project_members", "requirements", "documents",
                 "matches", "issues", "tasks", "agent_events",
                 "remediation_uploads", "verification_runs",
-                "auditor_overrides", "auditor_notes", "audit_events"
+                "auditor_overrides", "auditor_notes", "audit_events",
+                "notifications",
             ]
             for table in tables:
-                await db.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
+                if table in existing_tables:
+                    await db.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
             await db.commit()
         return True
 
