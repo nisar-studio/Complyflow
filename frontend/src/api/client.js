@@ -348,6 +348,17 @@ export const api = {
     return res.data.version;
   },
 
+  // ── Evidence Lifecycle ────────────────────────────────
+  getEvidenceLifecycle: async (projectId) => {
+    const res = await client.get(`/projects/${projectId}/evidence-lifecycle`);
+    return res.data.documents;
+  },
+
+  getExpiringEvidence: async (projectId, thresholdDays = 30) => {
+    const res = await client.get(`/projects/${projectId}/evidence-lifecycle/expiring`, { params: { threshold_days: thresholdDays } });
+    return res.data;
+  },
+
   // ── Remediation Task Status ────────────────────────────
   updateTaskStatus: async (projectId, taskId, status) => {
     const res = await client.put(`/projects/${projectId}/tasks/${taskId}/status`, { status });

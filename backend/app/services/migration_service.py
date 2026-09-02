@@ -43,6 +43,8 @@ _MIGRATION_MODULES: List[str] = [
     "app.migrations.001_initial_schema",
     "app.migrations.002_task_assignment",
     "app.migrations.003_notifications",
+    "app.migrations.004_document_versions",
+    "app.migrations.005_evidence_expiration",
 ]
 
 

@@ -34,12 +34,16 @@ async def upload_documents(
     requirements_file: Optional[UploadFile] = File(None),
     evidence_files: Optional[list[UploadFile]] = File(None),
     is_remediation: bool = Form(False),
+    expires_at: Optional[str] = Form(None),
     ctx: Dict[str, Any] = Depends(require_permission("documents:upload")),
 ):
     """
     Upload requirements document and/or evidence files.
     On is_remediation=True, adds new evidence to existing project.
     Requires: ADMIN or AUDITOR role.
+    
+    Optional expires_at: ISO-8601 date (e.g. 2026-12-31) for evidence expiration.
+    Once set, expires_at is immutable for that version.
 
     """
     storage = _get_storage()
@@ -61,9 +65,12 @@ async def upload_documents(
         now_ts = datetime.now(timezone.utc).isoformat()
         file_hash = hashlib.sha256(content).hexdigest()
 
-        # Check for duplicate upload
+        # Check for duplicate upload (same content + same expiration = deduplicate)
         existing_doc = await storage.get_document(project_id, "requirements_doc")
-        if existing_doc and existing_doc.get("file_hash") == file_hash:
+        existing_version = await storage.get_latest_document_version(project_id, "requirements_doc")
+        existing_expires = existing_version.get("expires_at") if existing_version else None
+        is_duplicate = (existing_doc and existing_doc.get("file_hash") == file_hash and existing_expires == expires_at)
+        if is_duplicate:
             saved_docs.append({
                 "doc_id": "requirements_doc",
                 "name": requirements_file.filename,
@@ -117,6 +124,7 @@ async def upload_documents(
                         "file_hash": file_hash,
                         "uploaded_by": ctx.get("user", {}).get("user_id", ""),
                         "uploaded_at": now_ts,
+                        "expires_at": expires_at,
                     },
                 )
             except Exception:
@@ -146,7 +154,7 @@ async def upload_documents(
             actor_type="AUDITOR",
             document_id="requirements_doc",
             summary=f"Requirements checklist '{requirements_file.filename}' uploaded.",
-            metadata={"filename": requirements_file.filename, "role": "requirements", "size": len(content), "version_number": version_number if not existing_doc or existing_doc.get("file_hash") != file_hash else existing_doc.get("version_number", 1)},
+            metadata={"filename": requirements_file.filename, "role": "requirements", "size": len(content), "version_number": version_number if not is_duplicate else existing_doc.get("version_number", 1), "expires_at": expires_at},
         )
 
     # Save evidence files
@@ -165,9 +173,12 @@ async def upload_documents(
             now_ts = datetime.now(timezone.utc).isoformat()
             file_hash = hashlib.sha256(content).hexdigest()
 
-            # Check for duplicate upload
+            # Check for duplicate upload (same content + same expiration = deduplicate)
             existing_doc = await storage.get_document(project_id, doc_id)
-            if existing_doc and existing_doc.get("file_hash") == file_hash:
+            existing_version = await storage.get_latest_document_version(project_id, doc_id)
+            existing_expires = existing_version.get("expires_at") if existing_version else None
+            is_duplicate = (existing_doc and existing_doc.get("file_hash") == file_hash and existing_expires == expires_at)
+            if is_duplicate:
                 saved_docs.append({
                     "doc_id": doc_id,
                     "name": ef.filename,
@@ -221,6 +232,7 @@ async def upload_documents(
                             "file_hash": file_hash,
                             "uploaded_by": ctx.get("user", {}).get("user_id", ""),
                             "uploaded_at": now_ts,
+                            "expires_at": expires_at,
                         },
                     )
                 except Exception:
@@ -250,7 +262,7 @@ async def upload_documents(
                 actor_type="AUDITOR",
                 document_id=doc_id,
                 summary=f"Evidence document '{ef.filename}' uploaded.",
-                metadata={"filename": ef.filename, "role": "evidence", "size": len(content), "version_number": version_number if not existing_doc or existing_doc.get("file_hash") != file_hash else existing_doc.get("version_number", 1)},
+                metadata={"filename": ef.filename, "role": "evidence", "size": len(content), "version_number": version_number if not is_duplicate else existing_doc.get("version_number", 1), "expires_at": expires_at},
             )
 
     return {"saved": saved_docs, "project_id": project_id}
@@ -530,3 +542,46 @@ async def get_document_version(
         raise HTTPException(status_code=404, detail=f"Version {version_number} not found for document '{safe_doc_id}'")
 
     return {"version": version}
+
+
+@router.get("/projects/{project_id}/evidence-lifecycle")
+async def get_evidence_lifecycle(
+    project_id: str,
+    ctx: Dict[str, Any] = Depends(get_project_member_context),
+):
+    """
+    Return lifecycle status of all evidence documents for a project.
+    Each document's expiration status is computed dynamically from the
+    latest version's expires_at — never persisted.
+    """
+    storage = _get_storage()
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    lifecycle = await storage.list_evidence_lifecycle(project_id)
+    return {"documents": lifecycle}
+
+
+@router.get("/projects/{project_id}/evidence-lifecycle/expiring")
+async def get_expiring_evidence(
+    project_id: str,
+    threshold_days: int = 30,
+    ctx: Dict[str, Any] = Depends(get_project_member_context),
+):
+    """
+    Return evidence expiring within threshold_days and already expired evidence.
+    """
+    storage = _get_storage()
+    project = await storage.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    lifecycle = await storage.list_evidence_lifecycle(project_id)
+    expiring_soon = [d for d in lifecycle if d.get("status") == "EXPIRING_SOON"]
+    expired = [d for d in lifecycle if d.get("status") == "EXPIRED"]
+    return {
+        "threshold_days": threshold_days,
+        "expiring_soon": expiring_soon,
+        "expired": expired,
+    }

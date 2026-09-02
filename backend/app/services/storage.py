@@ -106,6 +106,11 @@ class StorageInterface(ABC):
         pass
 
     @abstractmethod
+    async def list_evidence_lifecycle(self, project_id: str) -> List[Dict[str, Any]]:
+        """Return lifecycle status of all evidence documents for a project."""
+        pass
+
+    @abstractmethod
     async def create_framework(self, framework_data: Dict[str, Any], requirements: List[Dict[str, Any]]) -> str:
         """Create a versioned framework with its requirement definitions."""
         pass
@@ -818,11 +823,13 @@ class SQLiteStorageService(StorageInterface):
                     file_hash TEXT,
                     uploaded_by TEXT,
                     uploaded_at TEXT NOT NULL,
+                    expires_at TEXT DEFAULT NULL,
                     UNIQUE(project_id, doc_id, version_number)
                 );
             """)
             await db.execute("CREATE INDEX IF NOT EXISTS idx_dv_proj_doc ON document_versions (project_id, doc_id)")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_dv_proj_doc_ver ON document_versions (project_id, doc_id, version_number)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_dv_expires ON document_versions (project_id, doc_id, expires_at) WHERE expires_at IS NOT NULL")
 
             # Seed default demo user for local-first testing / development only
             app_env = os.environ.get("APP_ENV", "development").lower()
@@ -1109,27 +1116,27 @@ class SQLiteStorageService(StorageInterface):
         now = datetime.now(timezone.utc).isoformat()
         async with self._connect() as db:
             await db.execute(
-                """
-                INSERT INTO document_versions (
-                    version_id, project_id, doc_id, version_number, name, role,
-                    text, data_json, file_path, file_hash, uploaded_by, uploaded_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    version_id,
-                    project_id,
-                    doc_id,
-                    version_data.get("version_number", 1),
-                    version_data.get("name", ""),
-                    version_data.get("role", "evidence"),
-                    version_data.get("text", ""),
-                    json.dumps(version_data.get("data_json", {})) if isinstance(version_data.get("data_json"), dict) else version_data.get("data_json"),
-                    version_data.get("file_path", ""),
-                    version_data.get("file_hash", ""),
-                    version_data.get("uploaded_by", ""),
-                    version_data.get("uploaded_at", now),
-                ),
-            )
+                """                    INSERT INTO document_versions (
+                        version_id, project_id, doc_id, version_number, name, role,
+                        text, data_json, file_path, file_hash, uploaded_by, uploaded_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        version_id,
+                        project_id,
+                        doc_id,
+                        version_data.get("version_number", 1),
+                        version_data.get("name", ""),
+                        version_data.get("role", "evidence"),
+                        version_data.get("text", ""),
+                        json.dumps(version_data.get("data_json", {})) if isinstance(version_data.get("data_json"), dict) else version_data.get("data_json"),
+                        version_data.get("file_path", ""),
+                        version_data.get("file_hash", ""),
+                        version_data.get("uploaded_by", ""),
+                        version_data.get("uploaded_at", now),
+                        version_data.get("expires_at"),
+                    ),
+                )
             await db.commit()
         return version_id
 
@@ -1203,6 +1210,62 @@ class SQLiteStorageService(StorageInterface):
                     return row[0] + 1
                 return 1
 
+    async def list_evidence_lifecycle(self, project_id: str) -> List[Dict[str, Any]]:
+        """Return lifecycle status of all evidence documents for a project.
+        
+        Computes expiration status dynamically from the latest version's expires_at.
+        Does NOT persist expiration_status — it is always computed from current time.
+        """
+        await self._init_db()
+        now = datetime.now(timezone.utc)
+        threshold_days = 30
+        
+        # Query documents table directly to get doc_id and name
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT doc_id, name FROM documents WHERE project_id = ? AND role = ?",
+                (project_id, "evidence"),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            doc_id = row["doc_id"]
+            name = row["name"]
+            
+            # Get the latest version for expiration metadata
+            latest = await self.get_latest_document_version(project_id, doc_id)
+            expires_at = latest.get("expires_at") if latest else None
+            version_number = latest.get("version_number", 1) if latest else 1
+            
+            # Compute status dynamically
+            if expires_at is None:
+                status = "NO_EXPIRATION"
+            else:
+                try:
+                    exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                    if exp_dt.tzinfo is None:
+                        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                    delta = exp_dt - now
+                    if delta.total_seconds() <= 0:
+                        status = "EXPIRED"
+                    elif delta.days < threshold_days:
+                        status = "EXPIRING_SOON"
+                    else:
+                        status = "ACTIVE"
+                except (ValueError, TypeError):
+                    status = "NO_EXPIRATION"
+            
+            results.append({
+                "doc_id": doc_id,
+                "name": name,
+                "current_version": version_number,
+                "expires_at": expires_at,
+                "status": status,
+            })
+        return results
+
     async def save_document_with_version(self, project_id: str, doc_id: str, analysis: Dict[str, Any], version_data: Dict[str, Any]) -> None:
         """Atomically update documents table and create version record.
         
@@ -1240,8 +1303,8 @@ class SQLiteStorageService(StorageInterface):
                     """
                     INSERT INTO document_versions (
                         version_id, project_id, doc_id, version_number, name, role,
-                        text, data_json, file_path, file_hash, uploaded_by, uploaded_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        text, data_json, file_path, file_hash, uploaded_by, uploaded_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         version_id,
@@ -1256,6 +1319,7 @@ class SQLiteStorageService(StorageInterface):
                         version_data.get("file_hash", ""),
                         version_data.get("uploaded_by", ""),
                         version_data.get("uploaded_at", now),
+                        version_data.get("expires_at"),
                     ),
                 )
                 
@@ -2286,6 +2350,10 @@ class SQLiteStorageService(StorageInterface):
                 """
                 INSERT INTO notifications (notification_id, user_id, project_id, type, title, message, is_read, metadata_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(notification_id) DO UPDATE SET
+                    title = excluded.title,
+                    message = excluded.message,
+                    metadata_json = excluded.metadata_json
                 """,
                 (
                     notif_id,

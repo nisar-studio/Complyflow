@@ -391,6 +391,35 @@ export default function DocumentViewer({
                             v{doc.version_number}
                           </span>
                         )}
+                        {doc.expires_at && (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-mono mt-1 ${
+                            (() => {
+                              try {
+                                const exp = new Date(doc.expires_at);
+                                const now = new Date();
+                                const diff = exp - now;
+                                if (diff <= 0) return 'bg-red-950 text-red-400 border border-red-800';
+                                if (diff < 30 * 24 * 60 * 60 * 1000) return 'bg-amber-950 text-amber-400 border border-amber-800';
+                                return 'bg-emerald-950 text-emerald-400 border border-emerald-800';
+                              } catch {
+                                return 'bg-slate-800 text-slate-400 border border-slate-700';
+                              }
+                            })()
+                          }`}>
+                            {(() => {
+                              try {
+                                const exp = new Date(doc.expires_at);
+                                const now = new Date();
+                                const diff = exp - now;
+                                if (diff <= 0) return 'Expired';
+                                if (diff < 30 * 24 * 60 * 60 * 1000) return `Expires ${exp.toLocaleDateString()}`;
+                                return `Exp: ${exp.toLocaleDateString()}`;
+                              } catch {
+                                return 'Expires: set';
+                              }
+                            })()}
+                          </span>
+                        )}
                         <div className="flex items-center space-x-2 text-[10px] font-mono text-slate-400 mt-1">
                           <span className={`px-1.5 py-0.2 rounded uppercase ${
                             isReq ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'bg-slate-800 text-slate-300'
@@ -476,6 +505,11 @@ export default function DocumentViewer({
                         <span className="ml-1 text-[9px] opacity-70">
                           {new Date(v.uploaded_at).toLocaleDateString()}
                         </span>
+                        {v.expires_at && (
+                          <span className="ml-1 text-[9px] opacity-70">
+                            · exp: {new Date(v.expires_at).toLocaleDateString()}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>

@@ -27,6 +27,8 @@ from fastapi.responses import JSONResponse
 from app.agent.agent import _sanitize_error, run_compliance_analysis, run_verification
 from app.services.summary_service import generate_executive_summary
 from app.api._shared import _emit_factory, _get_storage
+from app.services.document_service import DocumentService
+from app.core.config import get_settings
 from app.services.auth_service import (
     get_project_member_context,
     require_permission,
@@ -55,6 +57,139 @@ async def _load_evidence_documents(storage: StorageInterface, project_id: str) -
         for d in docs
         if d.get("text", "").strip()
     ]
+
+
+async def _check_evidence_expiration(
+    storage: StorageInterface,
+    project_id: str,
+    emit_event=None,
+) -> tuple[list[dict], list[dict]]:
+    """Check all current evidence documents for expiration.
+    
+    Returns:
+        (expiration_gaps, expiration_tasks) — deterministic gaps/tasks for
+        expired evidence, using existing issue/task persistence.
+    
+    This function:
+    1. Queries ALL current evidence documents via list_evidence_lifecycle
+       (which correctly resolves doc_id from the documents table)
+    2. Creates deterministic expired_evidence gaps for expired docs
+    3. Creates deterministic remediation tasks for expired docs
+    4. Generates EVIDENCE_EXPIRED / EVIDENCE_EXPIRING_SOON notifications
+    
+    Uses ON CONFLICT DO UPDATE so repeated analysis does not duplicate.
+    """
+    now = datetime.now(timezone.utc)
+    threshold_days = 30
+    expiration_gaps = []
+    expiration_tasks = []
+    
+    # Use list_evidence_lifecycle which correctly queries the documents table
+    # and resolves doc_id, name, and computes expiration status dynamically
+    lifecycle = await storage.list_evidence_lifecycle(project_id)
+    
+    for item in lifecycle:
+        doc_id = item.get("doc_id", "")
+        doc_name = item.get("name", doc_id)
+        expires_at = item.get("expires_at")
+        version_number = item.get("current_version", 1)
+        status = item.get("status", "NO_EXPIRATION")
+        
+        if status == "EXPIRED":
+            # Create deterministic gap and task
+            gap_id = f"expired_evidence:{project_id}:{doc_id}:v{version_number}"
+            task_id = f"expired_evidence:{project_id}:{doc_id}:v{version_number}"
+            
+            gap = {
+                "gap_id": gap_id,
+                "gap_type": "expired_evidence",
+                "severity": "HIGH",
+                "description": f"Evidence '{doc_name}' (v{version_number}) has expired.",
+                "document_id": doc_id,
+                "document_name": doc_name,
+                "version_number": version_number,
+                "expires_at": expires_at,
+            }
+            expiration_gaps.append(gap)
+            
+            task = {
+                "task_id": task_id,
+                "title": f"Renew expired evidence: {doc_name}",
+                "severity": "HIGH",
+                "required_action": f"Upload a renewed version of '{doc_name}' to restore compliance.",
+                "status": "OPEN",
+                "related_gap_id": gap_id,
+                "document_id": doc_id,
+                "document_name": doc_name,
+                "version_number": version_number,
+                "expires_at": expires_at,
+            }
+            expiration_tasks.append(task)
+            
+            # Generate notification for all project members
+            members = await storage.list_project_members(project_id)
+            for member in members:
+                member_id = member.get("user_id")
+                if member_id:
+                    await storage.save_notification(
+                        user_id=member_id,
+                        notification={
+                            "notification_id": f"evidence_expired:{project_id}:{doc_id}:v{version_number}:{member_id}",
+                            "project_id": project_id,
+                            "type": "EVIDENCE_EXPIRED",
+                            "title": "Evidence Expired",
+                            "message": f"Evidence '{doc_name}' (v{version_number}) has expired.",
+                            "metadata": {
+                                "document_id": doc_id,
+                                "document_name": doc_name,
+                                "version_number": version_number,
+                                "expires_at": expires_at,
+                            },
+                        },
+                    )
+            
+            # Record audit event
+            await record_audit_event(
+                storage=storage,
+                project_id=project_id,
+                event_type="EVIDENCE_EXPIRED",
+                actor_type="SYSTEM",
+                document_id=doc_id,
+                summary=f"Evidence '{doc_name}' (v{version_number}) has expired.",
+                metadata={"document_id": doc_id, "version_number": version_number, "expires_at": expires_at},
+                emit_event=emit_event,
+            )
+        
+        elif status == "EXPIRING_SOON":
+            # Create notification only (no gap/task yet)
+            members = await storage.list_project_members(project_id)
+            for member in members:
+                member_id = member.get("user_id")
+                if member_id:
+                    await storage.save_notification(
+                        user_id=member_id,
+                        notification={
+                            "notification_id": f"evidence_expiring:{project_id}:{doc_id}:v{version_number}:{member_id}",
+                            "project_id": project_id,
+                            "type": "EVIDENCE_EXPIRING_SOON",
+                            "title": "Evidence Expiring Soon",
+                            "message": f"Evidence '{doc_name}' (v{version_number}) expires on {expires_at}.",
+                            "metadata": {
+                                "document_id": doc_id,
+                                "document_name": doc_name,
+                                "version_number": version_number,
+                                "expires_at": expires_at,
+                            },
+                        },
+                    )
+    
+    # Persist expiration gaps and tasks using existing ON CONFLICT DO UPDATE
+    if expiration_gaps:
+        await storage.save_issues(project_id, expiration_gaps)
+    if expiration_tasks:
+        await storage.save_tasks(project_id, expiration_tasks)
+    
+    return expiration_gaps, expiration_tasks
 
 
 # ── Analysis ───────────────────────────────────────────────────────
@@ -148,6 +283,13 @@ async def _run_analysis_task(
         await storage.save_matches(project_id, matches)
         await storage.save_issues(project_id, gaps)
         await storage.save_tasks(project_id, tasks)
+
+        # Check all evidence documents for expiration (independent of AI matching)
+        expiration_gaps, expiration_tasks = await _check_evidence_expiration(
+            storage, project_id, emit_event=emit_event
+        )
+        gaps.extend(expiration_gaps)
+        tasks.extend(expiration_tasks)
 
         # Record gap and conflict events
         for m in matches:
@@ -426,13 +568,18 @@ async def _run_verification_task(
 
         await storage.save_matches(project_id, matches)
 
+        # Check all evidence documents for expiration (independent of AI matching)
+        expiration_gaps, expiration_tasks = await _check_evidence_expiration(
+            storage, project_id, emit_event=emit_event
+        )
+
         score = result.get("compliance_score", 0.0)
         status = result.get("overall_status", "ACTION_REQUIRED")
         await storage.update_project(project_id, {
             "status": status,
             "compliance_score": score,
             "overall_status": status,
-            "issues_count": len(remaining_gap_ids),
+            "issues_count": len(remaining_gap_ids) + len(expiration_gaps),
         })
 
         await record_audit_event(
